@@ -1,0 +1,21 @@
+# Node
+node_modules/
+dist/
+.vite/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Go
+/bin/
+*.exe
+
+# Env
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
