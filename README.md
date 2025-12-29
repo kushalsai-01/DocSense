@@ -85,7 +85,7 @@ Built with a **high-performance Go backend**, a **dedicated ML service**, and a 
 - Prompt engineering
 
 ### Databases
-- PostgreSQL / MongoDB (metadata storage)
+- PostgreSQL  (metadata storage)
 - Vector database (semantic search)
 
 ### DevOps
@@ -103,23 +103,6 @@ Built with a **high-performance Go backend**, a **dedicated ML service**, and a 
 - Secure environment-based secrets
 - Scalable, microservice-ready architecture
 
----
-
-## 📈 Why DocSense Matters
-
-DocSense is **not a demo project**. It reflects:
-
-- Real-world AI backend architecture
-- Practical and scalable RAG implementation
-- Clean separation of concerns
-- Resume-ready system design depth
-
-**Ideal for roles such as:**
-- AI / ML Engineer  
-- Backend Engineer  
-- Full-stack Engineer with AI exposure  
-
----
 
 ## 🧪 Future Enhancements
 
