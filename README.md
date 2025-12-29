@@ -1,6 +1,6 @@
 # 📄 DocSense – AI-Powered Document Intelligence Platform (RAG)
 
-DocSense is a **production-grade, full-stack AI document assistant** that enables users to upload documents and interact with them using natural language. It leverages **Retrieval-Augmented Generation (RAG)** to deliver accurate, context-aware answers grounded strictly in user-uploaded data.
+DocSense is a **full-stack AI document assistant** that enables users to upload documents and interact with them using natural language. It leverages **Retrieval-Augmented Generation (RAG)** to deliver accurate, context-aware answers grounded strictly in user-uploaded data.
 
 Built with a **high-performance Go backend**, a **dedicated ML service**, and a **modern React frontend**, DocSense demonstrates real-world system design, scalable backend architecture, and applied AI engineering.
 
