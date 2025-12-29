@@ -1,10 +1,13 @@
 import { FirebaseError } from 'firebase/app'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthCard from '../components/AuthCard'
 import { useAuth } from '../auth/AuthContext'
 
 function friendlyFirebaseError(err: unknown): string {
+  if (err instanceof Error && /Firebase is not configured/i.test(err.message)) {
+    return err.message
+  }
   if (err instanceof FirebaseError) {
     switch (err.code) {
       case 'auth/invalid-credential':
@@ -27,7 +30,7 @@ function friendlyFirebaseError(err: unknown): string {
 
 export default function AuthPage() {
   const navigate = useNavigate()
-  const { user, signupWithEmailPassword, loginWithEmailPassword, loginWithGoogle } = useAuth()
+  const { user, isLoading: isAuthLoading, signupWithEmailPassword, loginWithEmailPassword, loginWithGoogle } = useAuth()
 
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined)
@@ -36,6 +39,13 @@ export default function AuthPage() {
     if (user) return 'You are already signed in.'
     return 'Sign in or create an account to continue.'
   }, [user])
+
+  useEffect(() => {
+    if (isAuthLoading) return
+    if (user) {
+      navigate('/app', { replace: true })
+    }
+  }, [user, isAuthLoading, navigate])
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">

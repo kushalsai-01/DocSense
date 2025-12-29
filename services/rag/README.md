@@ -1,19 +1,18 @@
-# DocSense RAG Service (Scaffold)
+# DocSense RAG
 
-FastAPI service exposing RAG-oriented endpoints.
+FastAPI service providing RAG endpoints for DocSense.
 
-## Endpoints
-
-- `POST /embed` – store chunk embeddings in Qdrant (placeholder embedding logic)
+## HTTP API
+- `POST /embed` – upsert chunk embeddings into Qdrant (placeholder embedding)
 - `POST /query` – retrieve top-k chunks from Qdrant and return a placeholder answer
+- `GET /health`
 
-## Local dev
-
+## Run locally
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Configure env via `.env` (see `.env.example`).
-
-No model provider keys are used. This service is scaffolded for clean architecture, not accuracy.
+## Env
+- Copy `.env.example` to `.env`
+- No model provider keys are used in this scaffold

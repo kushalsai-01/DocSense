@@ -59,7 +59,10 @@ export default function TypingLines({ lines }: Props) {
           <div key={idx} className="whitespace-pre-wrap text-zinc-100">
             <span>{line}</span>
             {isActiveLine ? (
-              <span className="ml-0.5 inline-block w-2 animate-pulse text-zinc-300">▍</span>
+              <span
+                aria-hidden="true"
+                className="ml-1 inline-block h-4 w-px translate-y-[1px] bg-zinc-200/40 align-middle motion-safe:animate-[pulse_2.4s_ease-in-out_infinite]"
+              />
             ) : null}
           </div>
         )

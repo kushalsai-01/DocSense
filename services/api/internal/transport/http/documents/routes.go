@@ -8,4 +8,5 @@ import "github.com/gin-gonic/gin"
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	docs := rg.Group("/documents")
 	docs.POST("/upload", h.Upload)
+	docs.GET("", h.List)
 }

@@ -1,0 +1,1 @@
+This is a tiny sample document used to test text upload and chunking. It contains enough words to create at least one chunk. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.

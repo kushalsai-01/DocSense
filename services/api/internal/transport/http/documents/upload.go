@@ -12,9 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"docsense/backend-go/internal/middleware"
+	"docsense/api/internal/ingest/chunk"
+	"docsense/api/internal/ingest/extract"
+	"docsense/api/internal/transport/http/middleware"
 
 	"github.com/gin-gonic/gin"
+	uuid "github.com/google/uuid"
 )
 
 // Upload handles multipart PDF uploads.
@@ -26,6 +29,13 @@ func (h *Handler) Upload(c *gin.Context) {
 	if !ok {
 		middleware.AbortUnauthorized(c)
 		return
+	}
+
+	if middleware.IsDevAuth(c) {
+		if err := h.ensureDevUserExists(c.Request.Context(), userID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to provision user"})
+			return
+		}
 	}
 
 	// Enforce a hard limit on request body size.
@@ -80,13 +90,70 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
-	if err := h.insertDocumentMetadata(c.Request.Context(), docID, userID, safeFilename, storageRel, fileHeader.Size); err != nil {
+	mimeType := fileHeader.Header.Get("Content-Type")
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	if err := h.insertDocumentMetadata(c.Request.Context(), docID, userID, safeFilename, storageRel, fileHeader.Size, mimeType); err != nil {
 		_ = os.Remove(storageAbs)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist metadata"})
 		return
 	}
 
+	// Synchronously extract text (simple, no chunking) and persist to document_contents.
+	content, err := extract.ExtractText(storageAbs, mimeType)
+	if err != nil {
+		_ = os.Remove(storageAbs)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to extract document text"})
+		return
+	}
+
+	if err := h.insertDocumentContent(c.Request.Context(), docID, content); err != nil {
+		_ = os.Remove(storageAbs)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist document content"})
+		return
+	}
+
+	// Deterministically chunk the extracted text and persist chunks.
+	// Convert document id string to uuid.UUID
+	docUUID, err := uuid.Parse(docID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid document id"})
+		return
+	}
+	chunks, err := chunk.ChunkText(docUUID, content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to chunk document text"})
+		return
+	}
+	if len(chunks) > 0 {
+		if err := h.insertDocumentChunks(c.Request.Context(), chunks); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist document chunks"})
+			return
+		}
+	}
+
+	if err := h.updateDocumentStatus(c.Request.Context(), docID, "ready"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update document status"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"document_id": docID})
+}
+
+func (h *Handler) ensureDevUserExists(ctx context.Context, userID string) error {
+	// In dev mode we allow automatic provisioning so uploads work without a
+	// separate user creation flow.
+	email := fmt.Sprintf("dev+%s@example.local", userID)
+	_, err := h.db.ExecContext(
+		ctx,
+		`INSERT INTO users (id, email, display_name, status)
+		 VALUES ($1, $2, 'Dev User', 'active')
+		 ON CONFLICT (id) DO NOTHING`,
+		userID,
+		email,
+	)
+	return err
 }
 
 func (h *Handler) newDocumentID(ctx context.Context) (string, error) {
@@ -98,21 +165,39 @@ func (h *Handler) newDocumentID(ctx context.Context) (string, error) {
 	return id, nil
 }
 
-func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID, filename, storagePath string, sizeBytes int64) error {
+func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID, filename, storagePath string, sizeBytes int64, mimeType string) error {
 	// Minimal metadata; additional columns can be added as the product evolves.
 	meta := map[string]any{
 		"original_filename": filename,
-		"storage":          "local",
+		"storage":           "local",
 	}
 	metaJSON, _ := json.Marshal(meta)
 
+	// Document lifecycle states (minimal):
+	// - 'uploaded': file has been received and metadata persisted. Next step is ingestion.
+	// - 'ingesting': background ingestion/processing is ongoing (e.g., text extraction, embeddings).
+	// - 'ready': ingestion completed and document is available for search.
+	// On upload we create or update the document row and set status = 'uploaded'.
+	// Use an upsert so repeated uploads for the same id (shouldn't normally happen)
+	// will result in updating the storage path / filename and resetting the status.
 	_, err := h.db.ExecContext(
 		ctx,
 		`INSERT INTO documents (id, user_id, title, source_type, mime_type, size_bytes, filename, storage_path, status, metadata)
-		 VALUES ($1, $2, $3, 'upload', 'application/pdf', $4, $5, $6, 'ready', $7::jsonb)`,
+		 VALUES ($1, $2, $3, 'upload', $4, $5, $6, $7, 'uploaded', $8::jsonb)
+		 ON CONFLICT (id) DO UPDATE SET
+		   user_id = EXCLUDED.user_id,
+		   title = EXCLUDED.title,
+		   source_type = EXCLUDED.source_type,
+		   mime_type = EXCLUDED.mime_type,
+		   size_bytes = EXCLUDED.size_bytes,
+		   filename = EXCLUDED.filename,
+		   storage_path = EXCLUDED.storage_path,
+		   status = 'uploaded',
+		   metadata = EXCLUDED.metadata`,
 		documentID,
 		userID,
 		filename,
+		mimeType,
 		sizeBytes,
 		filename,
 		storagePath,
@@ -123,25 +208,27 @@ func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID
 
 func validatePDF(fh *multipart.FileHeader) error {
 	name := strings.ToLower(fh.Filename)
-	if !strings.HasSuffix(name, ".pdf") {
-		return fmt.Errorf("only PDF files are supported")
-	}
+	if strings.HasSuffix(name, ".pdf") {
+		f, err := fh.Open()
+		if err != nil {
+			return fmt.Errorf("unable to read file")
+		}
+		defer func() { _ = f.Close() }()
 
-	f, err := fh.Open()
-	if err != nil {
-		return fmt.Errorf("unable to read file")
+		header := make([]byte, 5)
+		_, err = io.ReadFull(f, header)
+		if err != nil {
+			return fmt.Errorf("unable to read file")
+		}
+		if string(header) != "%PDF-" {
+			return fmt.Errorf("invalid PDF signature")
+		}
+		return nil
 	}
-	defer func() { _ = f.Close() }()
-
-	header := make([]byte, 5)
-	_, err = io.ReadFull(f, header)
-	if err != nil {
-		return fmt.Errorf("unable to read file")
+	if strings.HasSuffix(name, ".txt") {
+		return nil
 	}
-	if string(header) != "%PDF-" {
-		return fmt.Errorf("invalid PDF signature")
-	}
-	return nil
+	return fmt.Errorf("only PDF and TXT files are supported")
 }
 
 func sanitizeFilename(name string) string {
@@ -193,4 +280,44 @@ func saveMultipartFileAtomic(fh *multipart.FileHeader, dst string) error {
 		return err
 	}
 	return nil
+}
+
+func (h *Handler) insertDocumentContent(ctx context.Context, documentID, content string) error {
+	_, err := h.db.ExecContext(
+		ctx,
+		`INSERT INTO document_contents (document_id, content) VALUES ($1, $2)
+		 ON CONFLICT (document_id) DO UPDATE SET content = EXCLUDED.content, created_at = now()`,
+		documentID,
+		content,
+	)
+	return err
+}
+
+func (h *Handler) updateDocumentStatus(ctx context.Context, documentID, status string) error {
+	_, err := h.db.ExecContext(ctx, `UPDATE documents SET status = $1, updated_at = now() WHERE id = $2`, status, documentID)
+	return err
+}
+
+func (h *Handler) insertDocumentChunks(ctx context.Context, chunks []chunk.Chunk) error {
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt := `INSERT INTO document_chunks (id, document_id, chunk_index, content_text, token_count, created_at, updated_at)
+			 VALUES (gen_random_uuid(), $1, $2, $3, $4, now(), now())`
+
+	for _, ch := range chunks {
+		_, err = tx.ExecContext(ctx, stmt, ch.DocumentID.String(), ch.Index, ch.Content, ch.TokenCount)
+		if err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
 }

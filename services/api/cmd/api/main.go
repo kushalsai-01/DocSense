@@ -12,11 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"docsense/backend-go/internal/config"
-	"docsense/backend-go/internal/documents"
-	"docsense/backend-go/internal/auth"
-	"docsense/backend-go/internal/middleware"
-	"docsense/backend-go/internal/users"
+	"docsense/api/internal/adapters/config"
+	"docsense/api/internal/adapters/postgres"
+	"docsense/api/internal/transport/http/auth"
+	"docsense/api/internal/transport/http/documents"
+	"docsense/api/internal/transport/http/middleware"
+	"docsense/api/internal/transport/http/users"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -28,7 +29,7 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
-	db, err := config.OpenPostgres(cfg)
+	db, err := postgres.Open(cfg)
 	if err != nil {
 		log.Fatalf("db error: %v", err)
 	}
@@ -42,6 +43,9 @@ func main() {
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestID())
+	if cfg.App.Env != "production" {
+		router.Use(middleware.DevAuth())
+	}
 
 	api := router.Group("/api")
 	auth.RegisterRoutes(api)

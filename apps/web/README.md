@@ -1,12 +1,17 @@
-# DocSense Frontend
+# DocSense Web
 
-React + Vite + Tailwind CSS.
+React + Vite frontend for DocSense.
+
+## What it does
+- Firebase auth UI + route guard
+- Landing page + basic chat UI scaffold
 
 ## Run locally
-
 ```bash
 npm install
 npm run dev
 ```
 
-The landing page lives in `src/App.tsx`.
+## Env
+- Copy `.env.example` to `.env.local` (or set vars in your shell)
+- Vite exposes only variables prefixed with `VITE_`

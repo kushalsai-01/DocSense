@@ -47,10 +47,9 @@ export default function AuthCard({
   const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
 
-  const modeLabel = mode === 'login' ? 'Login' : 'Sign up'
   const submitLabel = useMemo(() => {
     if (isLoading) return 'Please wait…'
-    return mode === 'login' ? 'Login' : 'Create account'
+    return mode === 'login' ? 'Sign in' : 'Create account'
   }, [mode, isLoading])
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -76,7 +75,7 @@ export default function AuthCard({
   return (
     <section
       aria-label="Authentication"
-      className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-950/60 p-6 shadow-sm"
+      className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-950/60 p-6 shadow-sm backdrop-blur-sm"
     >
       <header className="text-center">
         <h2 className="text-xl font-semibold tracking-tight text-zinc-100">{title}</h2>
@@ -87,7 +86,7 @@ export default function AuthCard({
         <div
           role="tablist"
           aria-label="Authentication mode"
-          className="grid grid-cols-2 rounded-lg border border-zinc-800 bg-zinc-950 p-1"
+          className="grid grid-cols-2 rounded-full border border-zinc-800 bg-zinc-950 p-1"
         >
           <button
             type="button"
@@ -95,13 +94,13 @@ export default function AuthCard({
             aria-selected={mode === 'login'}
             className={
               mode === 'login'
-                ? 'rounded-md bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-900'
-                : 'rounded-md px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-900'
+                ? 'rounded-full bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm transition-colors duration-150'
+                : 'rounded-full px-3 py-2 text-sm font-medium text-zinc-300 transition-colors duration-150 hover:bg-zinc-900/60'
             }
             onClick={() => setMode('login')}
             disabled={isLoading}
           >
-            Login
+            Sign in
           </button>
           <button
             type="button"
@@ -109,13 +108,13 @@ export default function AuthCard({
             aria-selected={mode === 'signup'}
             className={
               mode === 'signup'
-                ? 'rounded-md bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-900'
-                : 'rounded-md px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-900'
+                ? 'rounded-full bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm transition-colors duration-150'
+                : 'rounded-full px-3 py-2 text-sm font-medium text-zinc-300 transition-colors duration-150 hover:bg-zinc-900/60'
             }
             onClick={() => setMode('signup')}
             disabled={isLoading}
           >
-            Sign up
+            Create account
           </button>
         </div>
 
@@ -133,18 +132,15 @@ export default function AuthCard({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
-              className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/60"
+              className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-950/50 px-3.5 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 transition-colors duration-150 focus:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-white/50"
               placeholder="you@company.com"
             />
           </div>
 
           <div>
-            <div className="flex items-center justify-between">
-              <label htmlFor={passwordId} className="block text-sm font-medium text-zinc-200">
-                Password
-              </label>
-              <span className="text-xs text-zinc-500">{modeLabel}</span>
-            </div>
+            <label htmlFor={passwordId} className="block text-sm font-medium text-zinc-200">
+              Password
+            </label>
             <input
               id={passwordId}
               name="password"
@@ -154,7 +150,7 @@ export default function AuthCard({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
-              className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/60"
+              className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-950/50 px-3.5 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 transition-colors duration-150 focus:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-white/50"
               placeholder={mode === 'login' ? 'Your password' : 'Create a password'}
             />
           </div>
@@ -171,7 +167,7 @@ export default function AuthCard({
           <button
             type="submit"
             disabled={isLoading}
-            className="inline-flex w-full items-center justify-center rounded-md bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:cursor-not-allowed disabled:opacity-70"
+            className="inline-flex w-full items-center justify-center rounded-md bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 transition-colors duration-150 hover:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 disabled:cursor-not-allowed disabled:opacity-70 active:translate-y-px"
           >
             {submitLabel}
           </button>

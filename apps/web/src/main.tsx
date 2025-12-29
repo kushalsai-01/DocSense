@@ -5,6 +5,9 @@ import App from './App'
 import { AuthProvider } from './auth/AuthContext'
 import './styles.css'
 
+// Debug mount marker: helps confirm React is executing in the browser console
+console.log('DocSense: booting React app (src/main.tsx)')
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AuthProvider>

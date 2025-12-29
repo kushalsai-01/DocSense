@@ -55,6 +55,15 @@ CREATE INDEX IF NOT EXISTS documents_user_checksum_idx ON documents (user_id, ch
 CREATE INDEX IF NOT EXISTS documents_user_storage_path_idx ON documents (user_id, storage_path);
 
 
+-- Documents: full extracted text content for quick debug / small-document queries.
+-- Keep this simple and easy to migrate later.
+CREATE TABLE IF NOT EXISTS document_contents (
+    document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
 -- Document chunks: text segments derived from documents.
 -- Embeddings live in Qdrant; we store only the relationship to the vector record.
 CREATE TABLE IF NOT EXISTS document_chunks (
