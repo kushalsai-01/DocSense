@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from qdrant_client.http import models as qm
 
 from app.core.settings import settings
-from app.embeddings.embedder import PlaceholderEmbedder
 from app.infra.qdrant.client import get_qdrant_client
 
 
@@ -15,10 +14,22 @@ class RetrievedChunk:
     score: float
     document_id: str | None
     text: str | None
+    chunk_index: int | None = None
+
+
+class EmbedderInterface:
+    """Interface for embedders (for type safety)."""
+
+    def embed_text(self, text: str) -> list[float]:
+        raise NotImplementedError
+
+    @property
+    def vector_size(self) -> int:
+        raise NotImplementedError
 
 
 class QdrantRetriever:
-    def __init__(self, embedder: PlaceholderEmbedder):
+    def __init__(self, embedder: EmbedderInterface):
         self._client = get_qdrant_client()
         self._embedder = embedder
 
@@ -35,12 +46,14 @@ class QdrantRetriever:
         out: list[RetrievedChunk] = []
         for p in results:
             payload = p.payload or {}
+            chunk_index = payload.get("chunk_index")
             out.append(
                 RetrievedChunk(
                     id=str(p.id),
                     score=float(p.score),
                     document_id=payload.get("document_id"),
                     text=payload.get("text"),
+                    chunk_index=int(chunk_index) if chunk_index is not None else None,
                 )
             )
         return out

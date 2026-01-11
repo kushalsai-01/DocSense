@@ -14,6 +14,7 @@ import (
 
 	"docsense/api/internal/adapters/config"
 	"docsense/api/internal/adapters/postgres"
+	"docsense/api/internal/adapters/rag"
 	"docsense/api/internal/transport/http/auth"
 	"docsense/api/internal/transport/http/documents"
 	"docsense/api/internal/transport/http/middleware"
@@ -47,10 +48,12 @@ func main() {
 		router.Use(middleware.DevAuth())
 	}
 
+	ragClient := rag.NewClient(cfg.RAG)
+
 	api := router.Group("/api")
 	auth.RegisterRoutes(api)
 	users.RegisterRoutes(api)
-	documents.NewHandler(db, cfg.Storage.Dir, cfg.Storage.MaxUploadBytes).RegisterRoutes(api)
+	documents.NewHandler(db, cfg.Storage.Dir, cfg.Storage.MaxUploadBytes, ragClient).RegisterRoutes(api)
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

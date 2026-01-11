@@ -2,16 +2,21 @@ package documents
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"docsense/api/internal/adapters/rag"
+	"docsense/api/internal/app"
 	"docsense/api/internal/ingest/chunk"
 	"docsense/api/internal/ingest/extract"
 	"docsense/api/internal/transport/http/middleware"
@@ -90,11 +95,19 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
+	// Calculate SHA256 checksum for deduplication
+	checksum, err := calculateSHA256(storageAbs)
+	if err != nil {
+		_ = os.Remove(storageAbs)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to calculate file checksum"})
+		return
+	}
+
 	mimeType := fileHeader.Header.Get("Content-Type")
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	if err := h.insertDocumentMetadata(c.Request.Context(), docID, userID, safeFilename, storageRel, fileHeader.Size, mimeType); err != nil {
+	if err := h.insertDocumentMetadata(c.Request.Context(), docID, userID, safeFilename, storageRel, fileHeader.Size, mimeType, checksum); err != nil {
 		_ = os.Remove(storageAbs)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist metadata"})
 		return
@@ -131,6 +144,28 @@ func (h *Handler) Upload(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist document chunks"})
 			return
 		}
+
+		// Send chunks to RAG service for embedding and indexing
+		ragChunks := make([]rag.ChunkIn, len(chunks))
+		for i, ch := range chunks {
+			chunkID, err := h.getChunkIDByIndex(c.Request.Context(), docID, ch.Index)
+			if err != nil {
+				log.Printf("warning: failed to get chunk ID for index %d: %v", ch.Index, err)
+				continue
+			}
+			ragChunks[i] = rag.ChunkIn{
+				ChunkID:    chunkID,
+				ChunkIndex: ch.Index,
+				Text:       ch.Content,
+			}
+		}
+
+		if len(ragChunks) > 0 {
+			if _, err := h.ragClient.EmbedChunks(c.Request.Context(), docID, ragChunks); err != nil {
+				log.Printf("warning: failed to embed chunks: %v", err)
+				// Don't fail the upload, but log the error
+			}
+		}
 	}
 
 	if err := h.updateDocumentStatus(c.Request.Context(), docID, "ready"); err != nil {
@@ -165,7 +200,7 @@ func (h *Handler) newDocumentID(ctx context.Context) (string, error) {
 	return id, nil
 }
 
-func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID, filename, storagePath string, sizeBytes int64, mimeType string) error {
+func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID, filename, storagePath string, sizeBytes int64, mimeType, checksumSHA256 string) error {
 	// Minimal metadata; additional columns can be added as the product evolves.
 	meta := map[string]any{
 		"original_filename": filename,
@@ -182,8 +217,8 @@ func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID
 	// will result in updating the storage path / filename and resetting the status.
 	_, err := h.db.ExecContext(
 		ctx,
-		`INSERT INTO documents (id, user_id, title, source_type, mime_type, size_bytes, filename, storage_path, status, metadata)
-		 VALUES ($1, $2, $3, 'upload', $4, $5, $6, $7, 'uploaded', $8::jsonb)
+		`INSERT INTO documents (id, user_id, title, source_type, mime_type, size_bytes, filename, storage_path, status, metadata, checksum_sha256)
+		 VALUES ($1, $2, $3, 'upload', $4, $5, $6, $7, 'uploaded', $8::jsonb, $9)
 		 ON CONFLICT (id) DO UPDATE SET
 		   user_id = EXCLUDED.user_id,
 		   title = EXCLUDED.title,
@@ -193,7 +228,8 @@ func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID
 		   filename = EXCLUDED.filename,
 		   storage_path = EXCLUDED.storage_path,
 		   status = 'uploaded',
-		   metadata = EXCLUDED.metadata`,
+		   metadata = EXCLUDED.metadata,
+		   checksum_sha256 = EXCLUDED.checksum_sha256`,
 		documentID,
 		userID,
 		filename,
@@ -202,6 +238,7 @@ func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID
 		filename,
 		storagePath,
 		string(metaJSON),
+		checksumSHA256,
 	)
 	return err
 }
@@ -225,22 +262,15 @@ func validatePDF(fh *multipart.FileHeader) error {
 		}
 		return nil
 	}
-	if strings.HasSuffix(name, ".txt") {
+	if strings.HasSuffix(name, ".txt") || strings.HasSuffix(name, ".md") {
 		return nil
 	}
-	return fmt.Errorf("only PDF and TXT files are supported")
+	return fmt.Errorf("only PDF, TXT, and MD files are supported")
 }
 
 func sanitizeFilename(name string) string {
 	base := filepath.Base(name)
-	base = strings.TrimSpace(base)
-	if base == "" {
-		return "document.pdf"
-	}
-	// Avoid path separators on any OS.
-	base = strings.ReplaceAll(base, "\\", "_")
-	base = strings.ReplaceAll(base, "/", "_")
-	return base
+	return app.ValidateDocumentFilename(base)
 }
 
 var errRequestTooLarge = errors.New("request too large")
@@ -320,4 +350,31 @@ func (h *Handler) insertDocumentChunks(ctx context.Context, chunks []chunk.Chunk
 		}
 	}
 	return tx.Commit()
+}
+
+func (h *Handler) getChunkIDByIndex(ctx context.Context, documentID string, chunkIndex int) (string, error) {
+	var chunkID string
+	err := h.db.QueryRowContext(
+		ctx,
+		`SELECT id::text FROM document_chunks WHERE document_id = $1 AND chunk_index = $2`,
+		documentID,
+		chunkIndex,
+	).Scan(&chunkID)
+	return chunkID, err
+}
+
+// calculateSHA256 computes the SHA256 hash of a file.
+func calculateSHA256(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
