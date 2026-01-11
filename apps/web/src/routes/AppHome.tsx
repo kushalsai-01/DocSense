@@ -154,10 +154,39 @@ export default function AppHome() {
     setInput('')
     setMessages((prev) => [...prev, { id: newId(), role: 'user', content: text }])
 
-    // Placeholder for backend call.
     startAssistantStreamPlaceholder()
-    appendToAssistantMessage('…')
-    finishAssistantStream()
+    
+    try {
+      const res = await fetch('/api/documents/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': USER_ID,
+        },
+        body: JSON.stringify({ query: text, top_k: 5 }),
+      })
+      
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: 'Query failed' }))
+        appendToAssistantMessage(`Error: ${error.error || 'Failed to get response'}`)
+        finishAssistantStream()
+        return
+      }
+      
+      const data = await res.json()
+      appendToAssistantMessage(data.answer || 'No answer received')
+      
+      // Optionally store citations for future display
+      if (data.citations && data.citations.length > 0) {
+        // Citations could be stored in state for display
+      }
+      
+      finishAssistantStream()
+    } catch (err) {
+      console.error('Query error:', err)
+      appendToAssistantMessage('Error: Failed to send query')
+      finishAssistantStream()
+    }
   }
 
   return (
@@ -184,7 +213,7 @@ export default function AppHome() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.txt"
+              accept=".pdf,.txt,.md"
               style={{ display: 'none' }}
               onChange={handleFileChange}
             />

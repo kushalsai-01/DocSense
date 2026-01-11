@@ -31,8 +31,8 @@ func ExtractText(filePath string, mimeType string) (string, error) {
 		}
 		return string(b), nil
 
-	case "text/plain":
-		// Read file content directly.
+	case "text/plain", "text/markdown":
+		// Read file content directly (supports .txt and .md files).
 		f, err := os.Open(filePath)
 		if err != nil {
 			return "", fmt.Errorf("open text file: %w", err)

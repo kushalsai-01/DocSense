@@ -30,6 +30,14 @@ class RetrievedChunkOut(BaseModel):
     text: str | None
 
 
+class Citation(BaseModel):
+    chunk_id: str
+    document_id: str | None
+    chunk_index: int | None
+    text_snippet: str | None
+
+
 class QueryResponse(BaseModel):
     answer: str
+    citations: list[Citation] = []
     matches: list[RetrievedChunkOut]
