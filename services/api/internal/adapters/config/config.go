@@ -38,11 +38,20 @@ type StorageConfig struct {
 	MaxUploadBytes int64
 }
 
+type RAGConfig struct {
+	// BaseURL is the base URL of the RAG service (e.g., "http://rag:8000")
+	BaseURL string
+
+	// Timeout is the HTTP client timeout for RAG service calls
+	Timeout time.Duration
+}
+
 type Config struct {
 	App      AppConfig
 	HTTP     HTTPConfig
 	Postgres PostgresConfig
 	Storage  StorageConfig
+	RAG      RAGConfig
 }
 
 // LoadFromEnv loads configuration purely from environment variables.
@@ -69,6 +78,9 @@ func LoadFromEnv() (Config, error) {
 	cfg.Storage.Dir = getenvDefault("STORAGE_DIR", "/data")
 	cfg.Storage.MaxUploadBytes = getenvInt64Default("MAX_UPLOAD_BYTES", 25<<20) // 25 MiB
 
+	cfg.RAG.BaseURL = getenvDefault("RAG_SERVICE_URL", "http://rag:8000")
+	cfg.RAG.Timeout = getenvDurationDefault("RAG_SERVICE_TIMEOUT", 60*time.Second)
+
 	if cfg.HTTP.Port <= 0 {
 		return Config{}, fmt.Errorf("invalid HTTP_PORT: %d", cfg.HTTP.Port)
 	}
@@ -89,6 +101,9 @@ func LoadFromEnv() (Config, error) {
 	}
 	if cfg.Storage.MaxUploadBytes <= 0 {
 		return Config{}, fmt.Errorf("invalid MAX_UPLOAD_BYTES: %d", cfg.Storage.MaxUploadBytes)
+	}
+	if cfg.RAG.BaseURL == "" {
+		return Config{}, fmt.Errorf("RAG_SERVICE_URL is required")
 	}
 
 	return cfg, nil
