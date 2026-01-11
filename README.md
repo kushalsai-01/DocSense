@@ -1,3 +1,4 @@
+feat/restructure-repo
 # DocSense - Enterprise-Grade RAG Platform
 
 **DocSense** is a production-ready Retrieval-Augmented Generation (RAG) platform designed for enterprise document intelligence. It provides deep, backend-heavy retrieval pipelines with explainability, evaluation, and observability built-in.
