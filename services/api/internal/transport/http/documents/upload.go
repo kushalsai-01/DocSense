@@ -66,7 +66,7 @@ func (h *Handler) Upload(c *gin.Context) {
 		return
 	}
 
-	if err := validatePDF(fileHeader); err != nil {
+	if err := validateFileFormat(fileHeader); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -243,7 +243,7 @@ func (h *Handler) insertDocumentMetadata(ctx context.Context, documentID, userID
 	return err
 }
 
-func validatePDF(fh *multipart.FileHeader) error {
+func validateFileFormat(fh *multipart.FileHeader) error {
 	name := strings.ToLower(fh.Filename)
 	if strings.HasSuffix(name, ".pdf") {
 		f, err := fh.Open()
