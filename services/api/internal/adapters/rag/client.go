@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"docsense/api/internal/adapters/config"
 )
@@ -70,8 +69,8 @@ type RetrievedChunkOut struct {
 
 // QueryResponse is the response from query endpoint.
 type QueryResponse struct {
-	Answer    string             `json:"answer"`
-	Citations []Citation         `json:"citations"`
+	Answer    string              `json:"answer"`
+	Citations []Citation          `json:"citations"`
 	Matches   []RetrievedChunkOut `json:"matches"`
 }
 

@@ -3,7 +3,6 @@ package documents
 import (
 	"net/http"
 
-	"docsense/api/internal/adapters/rag"
 	"docsense/api/internal/app"
 	"docsense/api/internal/transport/http/middleware"
 
@@ -20,7 +19,7 @@ type QueryRequest struct {
 //
 // Route: POST /api/documents/query
 func (h *Handler) Query(c *gin.Context) {
-	userID, ok := middleware.GetAuthenticatedUserID(c)
+	_, ok := middleware.GetAuthenticatedUserID(c)
 	if !ok {
 		middleware.AbortUnauthorized(c)
 		return
