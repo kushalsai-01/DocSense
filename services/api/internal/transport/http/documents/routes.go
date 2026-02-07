@@ -10,4 +10,5 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	docs.POST("/upload", h.Upload)
 	docs.GET("", h.List)
 	docs.POST("/query", h.Query)
+	docs.DELETE("/:id", h.Delete)
 }
