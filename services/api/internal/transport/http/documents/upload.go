@@ -145,19 +145,20 @@ func (h *Handler) Upload(c *gin.Context) {
 			return
 		}
 
-		// Send chunks to RAG service for embedding and indexing
-		ragChunks := make([]rag.ChunkIn, len(chunks))
-		for i, ch := range chunks {
+		// Send chunks to RAG service for embedding and indexing.
+		// Use append to avoid zero-value entries when a chunk ID lookup fails.
+		var ragChunks []rag.ChunkIn
+		for _, ch := range chunks {
 			chunkID, err := h.getChunkIDByIndex(c.Request.Context(), docID, ch.Index)
 			if err != nil {
 				log.Printf("warning: failed to get chunk ID for index %d: %v", ch.Index, err)
 				continue
 			}
-			ragChunks[i] = rag.ChunkIn{
+			ragChunks = append(ragChunks, rag.ChunkIn{
 				ChunkID:    chunkID,
 				ChunkIndex: ch.Index,
 				Text:       ch.Content,
-			}
+			})
 		}
 
 		if len(ragChunks) > 0 {
@@ -331,25 +332,24 @@ func (h *Handler) updateDocumentStatus(ctx context.Context, documentID, status s
 func (h *Handler) insertDocumentChunks(ctx context.Context, chunks []chunk.Chunk) error {
 	tx, err := h.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	// Always rollback on failure — Rollback after Commit is a harmless no-op.
+	defer func() { _ = tx.Rollback() }()
 
 	stmt := `INSERT INTO document_chunks (id, document_id, chunk_index, content_text, token_count, created_at, updated_at)
 			 VALUES (gen_random_uuid(), $1, $2, $3, $4, now(), now())`
 
 	for _, ch := range chunks {
-		_, err = tx.ExecContext(ctx, stmt, ch.DocumentID.String(), ch.Index, ch.Content, ch.TokenCount)
-		if err != nil {
-			_ = tx.Rollback()
-			return err
+		if _, execErr := tx.ExecContext(ctx, stmt, ch.DocumentID.String(), ch.Index, ch.Content, ch.TokenCount); execErr != nil {
+			return fmt.Errorf("insert chunk %d: %w", ch.Index, execErr)
 		}
 	}
-	return tx.Commit()
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
 }
 
 func (h *Handler) getChunkIDByIndex(ctx context.Context, documentID string, chunkIndex int) (string, error) {

@@ -17,6 +17,9 @@ FROM gcr.io/distroless/static
 WORKDIR /
 COPY --from=build /out/api /api
 
+# Ensure the default upload directory exists (volume-mounted in compose).
+COPY --from=build /src/data /data
+
 EXPOSE 8080
 
 ENTRYPOINT ["/api"]

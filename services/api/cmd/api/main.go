@@ -45,6 +45,7 @@ func main() {
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestID())
 	if cfg.App.Env != "production" {
+		router.Use(middleware.CORS())
 		router.Use(middleware.DevAuth())
 	}
 
@@ -56,6 +57,13 @@ func main() {
 	documents.NewHandler(db, cfg.Storage.Dir, cfg.Storage.MaxUploadBytes, ragClient).RegisterRoutes(api)
 
 	router.GET("/health", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+
+		if err := db.PingContext(ctx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy", "error": "database unreachable"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
