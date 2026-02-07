@@ -1,8 +1,9 @@
 import { FirebaseError } from 'firebase/app'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import AuthCard from '../components/AuthCard'
 import { useAuth } from '../auth/AuthContext'
+import { IconChevronLeft } from '../components/ui/Icons'
 
 function friendlyFirebaseError(err: unknown): string {
   if (err instanceof Error && /Firebase is not configured/i.test(err.message)) {
@@ -48,51 +49,62 @@ export default function AuthPage() {
   }, [user, isAuthLoading, navigate])
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <main className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6 py-16">
-        <AuthCard
-          title="DocSense"
-          subtitle={subtitle}
-          isLoading={isLoading}
-          errorMessage={errorMessage}
-          onLogin={async ({ email, password }) => {
-            setErrorMessage(undefined)
-            setIsLoading(true)
-            try {
-              await loginWithEmailPassword(email, password)
-              navigate('/app', { replace: true })
-            } catch (e) {
-              setErrorMessage(friendlyFirebaseError(e))
-            } finally {
-              setIsLoading(false)
-            }
-          }}
-          onSignup={async ({ email, password }) => {
-            setErrorMessage(undefined)
-            setIsLoading(true)
-            try {
-              await signupWithEmailPassword(email, password)
-              navigate('/app', { replace: true })
-            } catch (e) {
-              setErrorMessage(friendlyFirebaseError(e))
-            } finally {
-              setIsLoading(false)
-            }
-          }}
-          onGoogleSignIn={async () => {
-            setErrorMessage(undefined)
-            setIsLoading(true)
-            try {
-              await loginWithGoogle()
-              navigate('/app', { replace: true })
-            } catch (e) {
-              setErrorMessage(friendlyFirebaseError(e))
-            } finally {
-              setIsLoading(false)
-            }
-          }}
-        />
-      </main>
+    <div className="relative flex min-h-screen items-center justify-center bg-surface px-6 py-16">
+      {/* Back link */}
+      <Link
+        to="/"
+        className="absolute left-6 top-6 flex items-center gap-1 text-sm text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        <IconChevronLeft className="h-4 w-4" />
+        Home
+      </Link>
+
+      {/* Subtle glow */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="h-[400px] w-[400px] rounded-full bg-brand-600/5 blur-3xl" />
+      </div>
+
+      <AuthCard
+        subtitle={subtitle}
+        isLoading={isLoading}
+        errorMessage={errorMessage}
+        onLogin={async ({ email, password }) => {
+          setErrorMessage(undefined)
+          setIsLoading(true)
+          try {
+            await loginWithEmailPassword(email, password)
+            navigate('/app', { replace: true })
+          } catch (e) {
+            setErrorMessage(friendlyFirebaseError(e))
+          } finally {
+            setIsLoading(false)
+          }
+        }}
+        onSignup={async ({ email, password }) => {
+          setErrorMessage(undefined)
+          setIsLoading(true)
+          try {
+            await signupWithEmailPassword(email, password)
+            navigate('/app', { replace: true })
+          } catch (e) {
+            setErrorMessage(friendlyFirebaseError(e))
+          } finally {
+            setIsLoading(false)
+          }
+        }}
+        onGoogleSignIn={async () => {
+          setErrorMessage(undefined)
+          setIsLoading(true)
+          try {
+            await loginWithGoogle()
+            navigate('/app', { replace: true })
+          } catch (e) {
+            setErrorMessage(friendlyFirebaseError(e))
+          } finally {
+            setIsLoading(false)
+          }
+        }}
+      />
     </div>
   )
 }
