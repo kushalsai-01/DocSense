@@ -1,490 +1,566 @@
-import { useMemo, useRef, useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import Logo from '../components/Logo'
+import { Button, Badge } from '../components/ui'
+import {
+  IconUpload, IconSend, IconFile, IconSearch, IconLogOut, IconMenu,
+  IconX, IconSparkles, IconPlus, IconCitation, IconTrash,
+} from '../components/ui/Icons'
+
+/* ── Types ── */
 
 type DocumentItem = {
   id: string
-  filename: string
+  title: string
+  status?: string
 }
 
 type Role = 'user' | 'assistant'
+
+type Citation = {
+  chunk_id: string
+  document_id?: string
+  chunk_index?: number
+  text_snippet?: string
+}
 
 type ChatMessage = {
   id: string
   role: Role
   content: string
+  citations?: Citation[]
+  isError?: boolean
 }
 
 function newId() {
-  // Deterministic IDs are not required for UI scaffolding.
-  // Replace with server ids later.
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
 
-export default function AppHome() {
-    // Sidebar collapsed state
-    const [collapsed, setCollapsed] = useState(false)
-  const { user, signOut } = useAuth()
-  const navigate = useNavigate()
+/* ── Constants ── */
+const USER_ID = '00000000-0000-0000-0000-000000000001'
 
-  // Sidebar chat state
-  const [chats, setChats] = useState([
-    { id: 'chat_1', title: 'Quarterly Report Q&A' },
-    { id: 'chat_2', title: 'Handbook Search' },
-  ])
-  // Hardcoded user ID for all API calls
-  const USER_ID = '00000000-0000-0000-0000-000000000001'
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading] = useState(false)
+export default function AppHome() {
+  const { user, signOut } = useAuth()
+
+  /* ── Sidebar state ── */
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [docsLoading, setDocsLoading] = useState(false)
-  const [activeChatId, setActiveChatId] = useState(chats[0]?.id ?? null)
   const [search, setSearch] = useState('')
 
-  // Fetch documents from backend and map into the sidebar list
-  async function fetchDocuments(signal?: AbortSignal) {
+  /* ── Upload state ── */
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
+
+  /* ── Chat state ── */
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [isQuerying, setIsQuerying] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  /* ── Derived ── */
+  const userLabel = useMemo(() => user?.email ?? 'User', [user])
+  const userInitials = useMemo(() => {
+    if (!user?.email) return 'U'
+    return user.email
+      .split('@')[0]
+      .split(/[.\-_]/)
+      .map(s => s[0]?.toUpperCase())
+      .join('')
+      .slice(0, 2)
+  }, [user])
+
+  const filteredDocs = useMemo(() => {
+    if (!search.trim()) return documents
+    const q = search.toLowerCase()
+    return documents.filter(d => d.title.toLowerCase().includes(q))
+  }, [documents, search])
+
+  /* ── Scroll to bottom on new messages ── */
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  /* ── Auto-resize textarea ── */
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px'
+  }, [input])
+
+  /* ── Fetch documents ── */
+  const fetchDocuments = useCallback(async (signal?: AbortSignal) => {
     setDocsLoading(true)
-    console.log('FETCH user:', USER_ID)
     try {
       const res = await fetch('/api/documents', {
         signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Id': USER_ID,
-        },
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
       })
-      if (!res.ok) throw new Error('Network response was not ok')
+      if (!res.ok) throw new Error('Failed to fetch documents')
       const data = await res.json()
-      console.log('FETCH response:', data)
       if (Array.isArray(data)) {
-        setChats(
-          data
-            .filter((item: any) => item != null)
-            .map((d: any) => ({
-              id: typeof d?.id === 'string' && d.id ? d.id : newId(),
-              title:
-                typeof d?.title === 'string' && d.title
-                  ? d.title
-                  : typeof d?.filename === 'string' && d.filename
-                  ? d.filename
-                  : 'Untitled',
-            })),
+        setDocuments(
+          data.filter((item: unknown) => item != null).map((d: Record<string, unknown>) => ({
+            id: typeof d?.id === 'string' && d.id ? d.id : newId(),
+            title: typeof d?.title === 'string' && d.title ? d.title
+              : typeof d?.filename === 'string' && d.filename ? d.filename
+              : 'Untitled',
+            status: typeof d?.status === 'string' ? d.status : 'ready',
+          })),
         )
       }
     } catch (err) {
-      if ((err as any)?.name === 'AbortError') return
-      console.error('Failed to fetch /api/documents:', err)
-      setChats([])
+      if ((err as Error)?.name === 'AbortError') return
+      console.error('Failed to fetch documents:', err)
+      setDocuments([])
     } finally {
       setDocsLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     const ac = new AbortController()
     fetchDocuments(ac.signal)
     return () => ac.abort()
-  }, [])
+  }, [fetchDocuments])
 
-  // Upload handler
+  /* ── Upload handler ── */
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
     setUploading(true)
+    setUploadError(null)
+    setUploadSuccess(null)
+
     try {
       const formData = new FormData()
       formData.append('file', file)
-      console.log('UPLOAD user:', USER_ID)
+
       const res = await fetch('/api/documents/upload', {
         method: 'POST',
-        headers: {
-          'X-User-Id': USER_ID,
-        },
+        headers: { 'X-User-Id': USER_ID },
         body: formData,
       })
-      console.log('Upload response status:', res.status)
-      if (!res.ok) throw new Error('Upload failed')
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: 'Upload failed' }))
+        throw new Error(errBody.error || 'Upload failed')
+      }
+
       await res.json()
+      setUploadSuccess(`"${file.name}" uploaded successfully`)
       await fetchDocuments()
+
+      // Auto-clear success message
+      setTimeout(() => setUploadSuccess(null), 4000)
     } catch (err) {
-      console.error('Upload error:', err)
+      setUploadError((err as Error).message || 'Upload failed')
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
-  // Main chat state (unchanged)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
-  const streamingMessageIdRef = useRef<string | null>(null)
-
-  const activeUserLabel = useMemo(() => user?.email ?? user?.uid ?? 'User', [user])
-  // Profile menu state
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
-  const profileRef = useRef<HTMLDivElement>(null)
-
-  function startAssistantStreamPlaceholder() {
-    // Streaming-ready placeholder:
-    // When you connect your RAG service, call `appendToAssistantMessage(chunk)`
-    // for each streamed token/chunk, then call `finishAssistantStream()`.
-    const id = newId()
-    streamingMessageIdRef.current = id
-    setIsStreaming(true)
-    setMessages((prev) => [...prev, { id, role: 'assistant', content: '' }])
-  }
-
-  function appendToAssistantMessage(chunk: string) {
-    const id = streamingMessageIdRef.current
-    if (!id) return
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, content: m.content + chunk } : m)),
-    )
-  }
-
-  function finishAssistantStream() {
-    streamingMessageIdRef.current = null
-    setIsStreaming(false)
-  }
-
+  /* ── Query handler ── */
   async function handleSend() {
     const text = input.trim()
-    if (!text || isStreaming) return
+    if (!text || isQuerying) return
 
     setInput('')
-    setMessages((prev) => [...prev, { id: newId(), role: 'user', content: text }])
+    const userMsg: ChatMessage = { id: newId(), role: 'user', content: text }
+    setMessages(prev => [...prev, userMsg])
+    setIsQuerying(true)
 
-    startAssistantStreamPlaceholder()
-    
     try {
       const res = await fetch('/api/documents/query', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Id': USER_ID,
-        },
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
         body: JSON.stringify({ query: text, top_k: 5 }),
       })
-      
+
       if (!res.ok) {
-        const error = await res.json().catch(() => ({ error: 'Query failed' }))
-        appendToAssistantMessage(`Error: ${error.error || 'Failed to get response'}`)
-        finishAssistantStream()
+        const errBody = await res.json().catch(() => ({ error: 'Query failed' }))
+        setMessages(prev => [
+          ...prev,
+          { id: newId(), role: 'assistant', content: errBody.error || 'Failed to get response', isError: true },
+        ])
         return
       }
-      
+
       const data = await res.json()
-      appendToAssistantMessage(data.answer || 'No answer received')
-      
-      // Optionally store citations for future display
-      if (data.citations && data.citations.length > 0) {
-        // Citations could be stored in state for display
-      }
-      
-      finishAssistantStream()
+
+      const citations: Citation[] = Array.isArray(data.citations)
+        ? data.citations.map((c: Record<string, unknown>) => ({
+            chunk_id: c.chunk_id as string,
+            document_id: c.document_id as string | undefined,
+            chunk_index: c.chunk_index as number | undefined,
+            text_snippet: c.text_snippet as string | undefined,
+          }))
+        : []
+
+      setMessages(prev => [
+        ...prev,
+        {
+          id: newId(),
+          role: 'assistant',
+          content: (data.answer as string) || 'No answer received',
+          citations: citations.length > 0 ? citations : undefined,
+        },
+      ])
     } catch (err) {
       console.error('Query error:', err)
-      appendToAssistantMessage('Error: Failed to send query')
-      finishAssistantStream()
+      setMessages(prev => [
+        ...prev,
+        { id: newId(), role: 'assistant', content: 'Network error — could not reach the server.', isError: true },
+      ])
+    } finally {
+      setIsQuerying(false)
     }
   }
 
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  function clearChat() {
+    setMessages([])
+  }
+
+  /* ── Render ── */
   return (
-    <div className="h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
-      <div className="flex h-screen overflow-hidden">
-        {/* Left sidebar */}
-        <aside
-          className={
-            collapsed
-              ? 'hidden md:hidden'
-              : 'hidden w-[280px] border-r border-zinc-800/50 bg-zinc-950/30 md:flex flex-col relative'
-          }
-        >
-          {/* Add document button at top */}
-          <div className="px-3 pt-4 pb-2">
+    <div className="flex h-screen overflow-hidden bg-surface text-zinc-100">
+
+      {/* ──────── Sidebar ──────── */}
+      <aside
+        className={`${
+          sidebarOpen ? 'w-72' : 'w-0'
+        } flex-shrink-0 overflow-hidden border-r border-zinc-800/50 bg-surface-raised transition-all duration-200`}
+      >
+        <div className="flex h-full w-72 flex-col">
+          {/* Sidebar header */}
+          <div className="flex h-14 items-center justify-between border-b border-zinc-800/50 px-4">
+            <Logo size="sm" />
             <button
-              type="button"
-              className="w-full rounded-md border border-zinc-700 bg-transparent px-3 py-2 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/60 hover:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-600 transition"
-              onClick={() => !uploading && fileInputRef.current?.click()}
-              disabled={uploading}
+              onClick={() => setSidebarOpen(false)}
+              className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-surface-overlay hover:text-zinc-300"
+              aria-label="Close sidebar"
             >
-              {uploading ? 'Uploading…' : '+ Add document'}
+              <IconX className="h-4 w-4" />
             </button>
+          </div>
+
+          {/* Upload section */}
+          <div className="border-b border-zinc-800/50 p-3">
+            <Button
+              variant="primary"
+              size="md"
+              className="w-full"
+              onClick={() => !uploading && fileInputRef.current?.click()}
+              isLoading={uploading}
+            >
+              <IconUpload className="h-4 w-4" />
+              {uploading ? 'Uploading…' : 'Upload document'}
+            </Button>
             <input
               ref={fileInputRef}
               type="file"
               accept=".pdf,.txt,.md"
-              style={{ display: 'none' }}
+              className="hidden"
               onChange={handleFileChange}
             />
-          </div>
-          {/* New chat and collapse toggle row */}
-          <div className="flex items-center gap-2 px-3 pb-3">
-            <button
-              type="button"
-              className="flex-1 rounded-md border border-zinc-700 bg-transparent px-3 py-2 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/60 hover:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-600 transition"
-              onClick={() => {
-                const newId = `chat_${Date.now()}`
-                setChats([{ id: newId, title: 'New chat' }, ...chats])
-                setActiveChatId(newId)
-              }}
-            >
-              + New chat
-            </button>
-            <button
-              type="button"
-              className="ml-1 flex items-center justify-center rounded p-1 text-zinc-400 hover:bg-zinc-800/40 focus:outline-none"
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              onClick={() => setCollapsed(c => !c)}
-            >
-              {/* Chevron icon: left if expanded, right if collapsed */}
-              <svg width="22" height="22" fill="none" viewBox="0 0 20 20">
-                <path d="M12 5l-5 5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-          </div>
-          <div className="px-3 pb-2">
-            <div className="border-b border-zinc-800/60" />
+
+            {/* Upload feedback */}
+            {uploadError && (
+              <div className="mt-2 animate-fade-in rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-300">
+                {uploadError}
+                <button onClick={() => setUploadError(null)} className="ml-2 text-red-400 hover:text-red-200">✕</button>
+              </div>
+            )}
+            {uploadSuccess && (
+              <div className="mt-2 animate-fade-in rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300">
+                {uploadSuccess}
+              </div>
+            )}
           </div>
 
-          {/* Search section */}
-          <div className="px-3 pb-2">
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search chats"
-              className="w-full rounded-md border border-zinc-800/40 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/10"
-            />
+          {/* Search */}
+          <div className="p-3">
+            <div className="relative">
+              <IconSearch className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search documents…"
+                className="w-full rounded-lg border border-zinc-800/60 bg-surface py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-500 transition-colors focus:border-brand-500/30 focus:outline-none focus:ring-1 focus:ring-brand-500/30"
+              />
+            </div>
           </div>
 
-          {/* Chats list */}
-          <div className="flex-1 px-2 pb-3 overflow-y-auto">
+          {/* Documents list */}
+          <div className="flex-1 overflow-y-auto px-2 pb-3">
             {docsLoading ? (
-              <div className="px-3 text-sm text-zinc-500">Loading…</div>
-            ) : chats.length === 0 ? (
-              <div className="px-3 text-sm text-zinc-500">No documents</div>
+              <div className="flex items-center gap-2 px-3 py-4 text-sm text-zinc-500">
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Loading documents…
+              </div>
+            ) : filteredDocs.length === 0 ? (
+              <div className="px-3 py-8 text-center">
+                <IconFile className="mx-auto h-8 w-8 text-zinc-700" />
+                <p className="mt-2 text-sm text-zinc-500">
+                  {search ? 'No matching documents' : 'No documents yet'}
+                </p>
+                {!search && (
+                  <p className="mt-1 text-xs text-zinc-600">Upload a PDF, TXT, or MD file to get started</p>
+                )}
+              </div>
             ) : (
-              <ul className="space-y-1">
-                {chats.map(chat => {
-                  const isActive = chat.id === activeChatId
-                  return (
-                    <li key={chat.id}>
-                      <button
-                        type="button"
-                        aria-pressed={isActive}
-                        className={
-                          isActive
-                            ? 'relative w-full rounded-md bg-zinc-900/30 px-3 py-2 text-left text-sm text-zinc-100 font-medium transition-colors'
-                            : 'relative w-full rounded-md px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-zinc-900/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20'
-                        }
-                        onClick={() => setActiveChatId(chat.id)}
+              <ul className="space-y-0.5">
+                {filteredDocs.map(doc => (
+                  <li key={doc.id}>
+                    <div className="group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-surface-overlay">
+                      <IconFile className="h-4 w-4 flex-shrink-0 text-zinc-500" />
+                      <span className="flex-1 truncate text-zinc-300">{doc.title}</span>
+                      <Badge
+                        variant={doc.status === 'ready' ? 'success' : doc.status === 'processing' ? 'warning' : 'default'}
                       >
-                        <span
-                          aria-hidden="true"
-                          className={
-                            isActive
-                              ? 'absolute left-0 top-1.5 h-[calc(100%-0.75rem)] w-0.5 rounded-full bg-zinc-200/40'
-                              : 'absolute left-0 top-1.5 h-[calc(100%-0.75rem)] w-0.5 rounded-full bg-transparent'
-                          }
-                        />
-                        <p className="truncate">{chat.title}</p>
-                      </button>
-                    </li>
-                  )
-                })}
+                        {doc.status ?? 'ready'}
+                      </Badge>
+                    </div>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
 
-          {/* Bottom section: profile/account area */}
-          <div className="relative select-none mt-auto" ref={profileRef}
-            onMouseEnter={() => setProfileMenuOpen(true)}
-            onMouseLeave={() => setProfileMenuOpen(false)}
-          >
-            <div
-              className="flex items-center gap-3 px-4 py-3 border-t border-zinc-800/40 cursor-pointer hover:bg-zinc-900/30 transition"
-              onClick={() => setProfileMenuOpen(v => !v)}
-            >
-              <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-sm font-semibold text-zinc-200">
-                {/* Avatar: initials */}
-                {user?.email ? user.email.split('@')[0].split(/\W/).map(s => s[0]?.toUpperCase()).join('').slice(0,2) : 'U'}
+          {/* User section */}
+          <div className="border-t border-zinc-800/50 p-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-600/20 text-xs font-semibold text-brand-300">
+                {userInitials}
               </div>
-              <span className="text-sm text-zinc-200 truncate max-w-[120px]">{user?.email ?? 'User'}</span>
-            </div>
-            {/* Floating menu */}
-            {profileMenuOpen && (
-              <div
-                className="absolute bottom-14 left-4 w-48 min-w-[180px] bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl shadow-black/30 py-2 z-50 animate-fade-in"
+              <span className="flex-1 truncate text-sm text-zinc-300">{userLabel}</span>
+              <button
+                onClick={signOut}
+                className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-surface-overlay hover:text-red-400"
+                title="Sign out"
               >
-                <button className="w-full text-left px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition">Account</button>
-                <button className="w-full text-left px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition">Preferences</button>
-                <button className="w-full text-left px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition">Help</button>
-                <div className="my-2 border-t border-zinc-800" />
-                <button
-                  className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-zinc-800 transition"
-                  onClick={() => {
-                    setProfileMenuOpen(false)
-                    signOut()
-                  }}
-                >
-                  Sign out
-                </button>
+                <IconLogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* ──────── Main area ──────── */}
+      <main className="flex flex-1 flex-col overflow-hidden">
+        {/* Top bar */}
+        <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-zinc-800/50 px-4">
+          {!sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-surface-raised hover:text-zinc-300"
+              aria-label="Open sidebar"
+            >
+              <IconMenu className="h-5 w-5" />
+            </button>
+          )}
+          {!sidebarOpen && <Logo size="sm" />}
+
+          <div className="flex-1" />
+
+          <Badge variant="info">
+            <IconSparkles className="h-3 w-3" />
+            RAG Pipeline
+          </Badge>
+
+          {messages.length > 0 && (
+            <button
+              onClick={clearChat}
+              className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-surface-raised hover:text-zinc-300"
+            >
+              <IconTrash className="h-3.5 w-3.5" />
+              Clear chat
+            </button>
+          )}
+        </header>
+
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-4 py-6">
+            {messages.length === 0 ? (
+              /* ── Empty state ── */
+              <div className="flex min-h-[60vh] flex-col items-center justify-center text-center animate-fade-in">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-500/10">
+                  <IconSparkles className="h-8 w-8 text-brand-400" />
+                </div>
+                <h2 className="mt-6 text-2xl font-semibold tracking-tight">
+                  What can I help you find?
+                </h2>
+                <p className="mt-2 max-w-md text-sm leading-relaxed text-zinc-400">
+                  Ask a question about your uploaded documents. Answers are grounded in your data with citations.
+                </p>
+
+                {/* Quick starters */}
+                <div className="mt-8 grid w-full max-w-lg gap-2 sm:grid-cols-2">
+                  {[
+                    'Summarize my documents',
+                    'What are the key findings?',
+                    'List the main topics covered',
+                    'What conclusions are drawn?',
+                  ].map(q => (
+                    <button
+                      key={q}
+                      onClick={() => { setInput(q); textareaRef.current?.focus() }}
+                      className="rounded-xl border border-zinc-800/60 bg-surface-raised/50 px-4 py-3 text-left text-sm text-zinc-400 transition-colors hover:border-zinc-700 hover:bg-surface-raised hover:text-zinc-200"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* ── Message list ── */
+              <div className="space-y-6">
+                {messages.map(m => (
+                  <MessageBubble key={m.id} message={m} />
+                ))}
+
+                {/* Thinking indicator */}
+                {isQuerying && (
+                  <div className="flex gap-3 animate-fade-in">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-500/10">
+                      <IconSparkles className="h-4 w-4 text-brand-400" />
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-brand-400/60 [animation-delay:0ms]" />
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-brand-400/60 [animation-delay:150ms]" />
+                      <span className="h-2 w-2 animate-bounce rounded-full bg-brand-400/60 [animation-delay:300ms]" />
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
               </div>
             )}
           </div>
-        </aside>
+        </div>
 
-        {/* Main chat */}
-        <section className={collapsed ? 'flex min-w-0 flex-1 flex-col w-full relative' : 'flex min-w-0 flex-1 flex-col'}>
-          {/* Top bar */}
-          {/* Floating sidebar expand button (when collapsed) */}
-          {collapsed && (
-            <button
-              type="button"
-              className="fixed top-6 left-2 z-30 flex items-center justify-center rounded bg-zinc-900/80 p-1 text-zinc-400 hover:bg-zinc-800/80 focus:outline-none border border-zinc-800 shadow-md"
-              aria-label="Expand sidebar"
-              onClick={() => setCollapsed(false)}
-            >
-              <svg width="22" height="22" fill="none" viewBox="0 0 20 20">
-                <path d="M8 5l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-          )}
-          {/* Fixed header */}
-          <header className="flex h-12 items-center border-b border-zinc-800/60 bg-zinc-950/30 justify-center sticky top-0 z-20">
-            <div className="flex w-full max-w-[800px] items-center px-4">
-              {/* Left: Product name + chevron */}
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base font-semibold text-zinc-100">DocSense</span>
-                <span className="inline-block h-4 w-4 text-zinc-400 align-middle select-none">
-                  {/* Chevron Down SVG (visual only) */}
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clipRule="evenodd" /></svg>
-                </span>
-              </div>
-
-              {/* Center: Context label */}
-              <div className="flex-1 flex justify-center">
-                <span className="text-xs font-medium text-zinc-500/80">RAG</span>
-              </div>
-
-              {/* Right: Quiet actions */}
-              <div className="flex items-center gap-2">
-                <button type="button" className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-sm font-medium text-zinc-300 transition-colors duration-150 hover:bg-zinc-900/20 focus:outline-none">
-                  {/* Share icon placeholder */}
-                  <span className="inline-block h-4 w-4 text-zinc-400">
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><circle cx="10" cy="10" r="2.5" /><path d="M10 2v2m0 12v2m8-8h-2M4 10H2m12.07-4.07l-1.42 1.42M5.35 14.65l-1.42 1.42m12.07 4.07l-1.42-1.42M5.35 5.35L3.93 3.93" /></svg>
-                  </span>
-                  Share
-                </button>
-                <button type="button" className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-sm font-medium text-zinc-300 transition-colors duration-150 hover:bg-zinc-900/20 focus:outline-none">
-                  {/* Add people icon placeholder */}
-                  <span className="inline-block h-4 w-4 text-zinc-400">
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><circle cx="7" cy="8" r="3" /><circle cx="13" cy="8" r="3" /><path d="M2 16c0-2.5 3-4 5-4s5 1.5 5 4" /><path d="M13 12c2 0 5 1.5 5 4" /></svg>
-                  </span>
-                  Add people
-                </button>
-              </div>
+        {/* ── Input area ── */}
+        <footer className="flex-shrink-0 border-t border-zinc-800/50 bg-surface p-4">
+          <div className="mx-auto max-w-3xl">
+            <div className="relative rounded-2xl border border-zinc-800/60 bg-surface-raised transition-colors focus-within:border-brand-500/30 focus-within:ring-1 focus-within:ring-brand-500/20">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask a question about your documents…"
+                rows={1}
+                disabled={isQuerying}
+                className="block w-full resize-none rounded-2xl bg-transparent px-4 py-3.5 pr-14 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-60"
+                style={{ maxHeight: '200px' }}
+              />
+              <button
+                onClick={handleSend}
+                disabled={isQuerying || !input.trim()}
+                className="absolute bottom-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white transition-all hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Send message"
+              >
+                <IconSend className="h-4 w-4" />
+              </button>
             </div>
-          </header>
-
-          {/* Messages (scrollable only) */}
-          <div className="flex-1 flex justify-center px-4 py-10 overflow-hidden">
-            <div className="w-full max-w-[800px] h-full flex flex-col">
-              <div className="flex-1 overflow-y-auto">
-                {messages.length === 0 ? (
-                  <div className="flex w-full h-full items-center justify-center">
-                    <div className="flex flex-col items-center justify-center">
-                      <TypewriterHeadline />
-                      <p className="mt-2 text-base text-zinc-400 text-center">
-                        Ask a question about your documents to get grounded answers.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex w-full flex-col gap-6">
-                    {messages.map((m) => (
-                      <div
-                        key={m.id}
-                        className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
-                      >
-                        <div
-                          className={
-                            m.role === 'user'
-                              ? 'max-w-[85%] rounded-2xl bg-zinc-800/40 px-4 py-3 text-sm leading-6 text-zinc-100'
-                              : 'max-w-[85%] px-1 text-sm leading-6 text-zinc-100'
-                          }
-                        >
-                          <p className="whitespace-pre-wrap">{m.content || (m.role === 'assistant' ? ' ' : '')}</p>
-                        </div>
-                      </div>
-                    ))}
-
-                    {isStreaming ? <p className="text-xs text-zinc-500">Streaming…</p> : null}
-                  </div>
-                )}
-              </div>
-            </div>
+            <p className="mt-2 text-center text-2xs text-zinc-600">
+              Answers are generated from your uploaded documents using RAG. Always verify with source citations.
+            </p>
           </div>
-
-          {/* Input (pinned to bottom) */}
-          <footer className="border-t border-zinc-800/50 bg-zinc-950/30 flex justify-center py-6 px-4 sticky bottom-0 z-20">
-            <div className="w-full max-w-[800px]">
-              <div className="relative rounded-2xl border border-zinc-800/60 bg-zinc-950/40">
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask anything"
-                  rows={1}
-                  disabled={isStreaming}
-                  className="max-h-48 min-h-[64px] w-full resize-y rounded-2xl bg-transparent px-4 py-4 pr-24 text-sm leading-6 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-white/20"
-                />
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={isStreaming || input.trim().length === 0}
-                  className="absolute bottom-3 right-3 inline-flex items-center justify-center rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 transition-colors duration-150 hover:bg-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Send
-                </button>
-              </div>
-
-              <p className="mt-2 text-center text-xs text-zinc-500/90">
-                Streaming-ready: replace placeholder with RAG service stream.
-              </p>
-            </div>
-          </footer>
-        </section>
-      </div>
+        </footer>
+      </main>
     </div>
   )
 }
 
-// Calm, premium typewriter effect for empty-state headline
-function TypewriterHeadline() {
-  const fullText = "What can I help you find?";
-  const [visibleText, setVisibleText] = useState("");
-  useEffect(() => {
-    let index = 0;
-    const startDelay = window.setTimeout(() => {
-      let currentText = "";
-      const intervalId = window.setInterval(() => {
-        if (index < fullText.length) {
-          currentText += fullText[index];
-          setVisibleText(currentText);
-          index++;
-        } else {
-          window.clearInterval(intervalId);
-        }
-      }, 50);
-    }, 300);
-    return () => {
-      window.clearTimeout(startDelay);
-    };
-  }, []);
+/* ── MessageBubble component ── */
+
+function MessageBubble({ message }: { message: ChatMessage }) {
+  const [citationsExpanded, setCitationsExpanded] = useState(false)
+
+  if (message.role === 'user') {
+    return (
+      <div className="flex justify-end animate-slide-up">
+        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-brand-600/20 border border-brand-500/10 px-4 py-3">
+          <p className="text-sm leading-relaxed text-zinc-100 whitespace-pre-wrap">{message.content}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Assistant
   return (
-    <div className="mb-2 text-2xl sm:text-3xl font-medium leading-relaxed text-zinc-100 text-center min-h-[2.5em]">
-      {visibleText}
+    <div className="flex gap-3 animate-slide-up">
+      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-500/10">
+        <IconSparkles className="h-4 w-4 text-brand-400" />
+      </div>
+      <div className="flex-1 space-y-3">
+        <div className={`text-sm leading-relaxed ${message.isError ? 'text-red-300' : 'text-zinc-200'}`}>
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        </div>
+
+        {/* Citations */}
+        {message.citations && message.citations.length > 0 && (
+          <div className="space-y-2">
+            <button
+              onClick={() => setCitationsExpanded(v => !v)}
+              className="flex items-center gap-1.5 text-xs font-medium text-brand-400 transition-colors hover:text-brand-300"
+            >
+              <IconCitation className="h-3.5 w-3.5" />
+              {message.citations.length} source{message.citations.length > 1 ? 's' : ''} cited
+              <svg
+                className={`h-3 w-3 transition-transform ${citationsExpanded ? 'rotate-180' : ''}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            {citationsExpanded && (
+              <div className="space-y-2 animate-fade-in">
+                {message.citations.map((cit, idx) => (
+                  <div
+                    key={cit.chunk_id || idx}
+                    className="rounded-lg border border-zinc-800/60 bg-surface px-3 py-2.5"
+                  >
+                    <div className="mb-1 flex items-center gap-2">
+                      <Badge variant="info">Chunk {cit.chunk_index ?? idx + 1}</Badge>
+                      {cit.document_id && (
+                        <span className="truncate text-2xs text-zinc-600">
+                          doc: {cit.document_id.slice(0, 8)}…
+                        </span>
+                      )}
+                    </div>
+                    {cit.text_snippet && (
+                      <p className="text-xs leading-relaxed text-zinc-400">
+                        "{cit.text_snippet}"
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )
 }

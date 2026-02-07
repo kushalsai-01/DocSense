@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import Logo from '../components/Logo'
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -7,10 +8,17 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100">
-        <main className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6">
-          <p className="text-sm text-zinc-400">Loading…</p>
-        </main>
+      <div className="flex min-h-screen items-center justify-center bg-surface">
+        <div className="flex flex-col items-center gap-4 animate-fade-in">
+          <Logo size="lg" />
+          <div className="flex items-center gap-2 text-sm text-zinc-500">
+            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Loading…
+          </div>
+        </div>
       </div>
     )
   }
