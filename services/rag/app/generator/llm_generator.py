@@ -72,13 +72,16 @@ class LLMGenerator:
     """
 
     def __init__(self, provider: LLMProvider | None = None):
-        if provider is None:
-            if settings.llm_provider == "openai":
-                self._provider = OpenAIProvider()
-            else:
-                raise ValueError(f"Unsupported LLM provider: {settings.llm_provider}")
-        else:
+        if provider is not None:
             self._provider = provider
+        elif settings.llm_provider == "openai":
+            try:
+                self._provider = OpenAIProvider()
+            except (ValueError, ImportError):
+                # Fall back to context-echo when no API key is available.
+                self._provider = None
+        else:
+            self._provider = None
 
         # Initialize context budget manager
         self._context_budget = ContextBudget(
@@ -116,12 +119,26 @@ class LLMGenerator:
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(question, context_text)
 
-        # Generate answer
-        answer_text = self._provider.generate(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_tokens=1000,
-        )
+        # Generate answer — use LLM if available, else echo context
+        if self._provider is not None:
+            answer_text = self._provider.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=1000,
+            )
+        else:
+            # Fallback: summarize retrieved context without LLM
+            snippets = []
+            for i, ch in enumerate(selected_chunks, 1):
+                text = (ch.text or "").strip()
+                if len(text) > 300:
+                    text = text[:300] + "..."
+                snippets.append(f"[{i}] {text}")
+            answer_text = (
+                "LLM is not configured (set OPENAI_API_KEY). "
+                "Here are the most relevant passages from your documents:\n\n"
+                + "\n\n".join(snippets)
+            )
 
         # Extract citations from selected chunks
         citations = [

@@ -77,7 +77,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
 
       async signOut() {
-        requireFirebase()
+        if (!isFirebaseConfigured || !auth) {
+          // In dev mode without Firebase, just clear local state.
+          setUser(null)
+          return
+        }
         await firebaseSignOut(auth)
         setUser(null)
       },

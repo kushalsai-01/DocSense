@@ -30,10 +30,11 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
       interval: 5s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 15
+      start_period: 10s
 
   api:
     build:
@@ -52,6 +53,12 @@ services:
         condition: service_healthy
     volumes:
       - api_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   rag:
     build:
@@ -66,6 +73,12 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   web:
     build:
@@ -78,8 +91,10 @@ services:
     ports:
       - "5173:5173"
     depends_on:
-      - api
-      - rag
+      api:
+        condition: service_healthy
+      rag:
+        condition: service_healthy
 
 volumes:
   postgres_data:

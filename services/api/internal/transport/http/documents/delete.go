@@ -2,6 +2,7 @@ package documents
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -65,6 +66,12 @@ func (h *Handler) Delete(c *gin.Context) {
 	if storagePath.Valid && storagePath.String != "" {
 		abs := filepath.Join(h.storageDir, filepath.FromSlash(storagePath.String))
 		_ = os.Remove(abs)
+	}
+
+	// Best-effort: remove vectors from Qdrant for this document.
+	// Chunk rows are already cascade-deleted from Postgres above.
+	if err := h.ragClient.DeleteDocumentVectors(c.Request.Context(), docID); err != nil {
+		log.Printf("warning: failed to delete qdrant vectors for document %s: %v", docID, err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
