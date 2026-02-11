@@ -149,3 +149,26 @@ func (c *Client) Query(ctx context.Context, query string, topK int) (*QueryRespo
 
 	return &queryResp, nil
 }
+
+// DeleteDocumentVectors tells the RAG service to remove all vectors for a document.
+// This is best-effort; failures are logged but do not block the delete flow.
+func (c *Client) DeleteDocumentVectors(ctx context.Context, documentID string) error {
+	url := c.baseURL + "/documents/" + documentID + "/vectors"
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("create delete request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute delete request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete vectors failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}

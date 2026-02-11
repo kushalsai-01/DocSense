@@ -84,3 +84,21 @@ class QdrantRetriever:
 
         self._client.upsert(collection_name=settings.qdrant_collection, points=points)
         return len(points)
+
+    def delete_by_document(self, document_id: str) -> int:
+        """Delete all points in Qdrant whose payload.document_id matches."""
+        self._client.delete(
+            collection_name=settings.qdrant_collection,
+            points_selector=qm.FilterSelector(
+                filter=qm.Filter(
+                    must=[
+                        qm.FieldCondition(
+                            key="document_id",
+                            match=qm.MatchValue(value=document_id),
+                        )
+                    ]
+                )
+            ),
+        )
+        # Qdrant delete does not return a count; return 0 as a sentinel.
+        return 0

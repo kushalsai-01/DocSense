@@ -1,10 +1,16 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { isFirebaseConfigured } from './firebase'
 import Logo from '../components/Logo'
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
   const location = useLocation()
+
+  // When Firebase is not configured, skip auth and allow direct access (dev mode).
+  if (!isFirebaseConfigured) {
+    return <>{children}</>
+  }
 
   if (isLoading) {
     return (
