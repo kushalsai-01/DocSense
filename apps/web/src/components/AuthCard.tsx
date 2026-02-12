@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import Logo from './Logo'
 import { Button, Input } from './ui'
+import { isFirebaseConfigured } from '../auth/firebase'
 
 type AuthMode = 'login' | 'signup'
 
@@ -89,6 +90,19 @@ export default function AuthCard({
             Create account
           </button>
         </div>
+
+        {/* Demo credentials notice (when Firebase is not configured) */}
+        {!isFirebaseConfigured && (
+          <div className="mt-4 rounded-lg border border-brand-500/20 bg-brand-500/5 px-3 py-2.5">
+            <p className="text-xs font-medium text-brand-300">🎯 Demo Mode</p>
+            <p className="mt-1 text-xs text-zinc-400">
+              Use these credentials to sign in:
+            </p>
+            <p className="mt-1 font-mono text-xs text-brand-200">
+              demo@docsense.app / demo123
+            </p>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">

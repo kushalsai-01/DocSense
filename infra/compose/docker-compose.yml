@@ -6,7 +6,7 @@ services:
     container_name: docsense-postgres
     restart: unless-stopped
     env_file:
-      - ./env/postgres.env.example
+      - ./env/postgres.env
     ports:
       - "5432:5432"
     volumes:
@@ -23,7 +23,7 @@ services:
     container_name: docsense-qdrant
     restart: unless-stopped
     env_file:
-      - ./env/qdrant.env.example
+      - ./env/qdrant.env
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -43,7 +43,7 @@ services:
     container_name: docsense-api
     restart: unless-stopped
     env_file:
-      - ./env/api.env.example
+      - ./env/api.env
     ports:
       - "8080:8080"
     depends_on:
@@ -67,7 +67,7 @@ services:
     container_name: docsense-rag
     restart: unless-stopped
     env_file:
-      - ./env/rag.env.example
+      - ./env/rag.env
     ports:
       - "8000:8000"
     depends_on:
@@ -87,7 +87,7 @@ services:
     container_name: docsense-web
     restart: unless-stopped
     env_file:
-      - ./env/web.env.example
+      - ./env/web.env
     ports:
       - "5173:5173"
     depends_on:

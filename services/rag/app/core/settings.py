@@ -16,11 +16,15 @@ class Settings(BaseSettings):
     # Embedding model settings
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
-    # LLM settings (abstracted - supports OpenAI or local)
-    llm_provider: str = "openai"  # "openai" or "local"
+    # LLM settings (abstracted - supports OpenAI, Gemini, or local)
+    llm_provider: str = "openai"  # "openai", "gemini", or "local"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     openai_base_url: str | None = None  # For OpenAI-compatible APIs
+    
+    # Gemini settings
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash-exp"  # or gemini-1.5-pro, gemini-1.5-flash
 
     # Reranker settings
     reranker_enabled: bool = True

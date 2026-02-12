@@ -64,6 +64,43 @@ class OpenAIProvider:
         return response.choices[0].message.content or ""
 
 
+class GeminiProvider:
+    """Google Gemini LLM provider."""
+
+    def __init__(self):
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            raise ImportError("google-generativeai package is required for Gemini generation")
+
+        api_key = settings.gemini_api_key
+        if not api_key and settings.llm_provider == "gemini":
+            raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini")
+
+        if api_key:
+            genai.configure(api_key=api_key)
+            self.model = genai.GenerativeModel(settings.gemini_model)
+        else:
+            self.model = None
+
+    def generate(self, system_prompt: str, user_prompt: str, max_tokens: int) -> str:
+        if self.model is None:
+            raise ValueError("Gemini model not initialized")
+
+        # Gemini doesn't have separate system/user roles in the same way
+        # We combine system prompt with user prompt
+        combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+        
+        response = self.model.generate_content(
+            combined_prompt,
+            generation_config={
+                "max_output_tokens": max_tokens,
+                "temperature": 0.0,
+            }
+        )
+        return response.text
+
+
 class LLMGenerator:
     """Production-grade answer generator with citations.
 
@@ -77,6 +114,12 @@ class LLMGenerator:
         elif settings.llm_provider == "openai":
             try:
                 self._provider = OpenAIProvider()
+            except (ValueError, ImportError):
+                # Fall back to context-echo when no API key is available.
+                self._provider = None
+        elif settings.llm_provider == "gemini":
+            try:
+                self._provider = GeminiProvider()
             except (ValueError, ImportError):
                 # Fall back to context-echo when no API key is available.
                 self._provider = None
