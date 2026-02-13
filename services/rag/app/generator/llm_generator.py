@@ -133,8 +133,13 @@ class LLMGenerator:
             reserved_for_response=1000,
         )
 
-    def generate(self, question: str, context: list[RetrievedChunk]) -> GeneratedAnswer:
+    def generate(self, question: str, context: list[RetrievedChunk], conversation_context: str | None = None) -> GeneratedAnswer:
         """Generate an answer with citations from retrieved chunks.
+        
+        Args:
+            question: User's question
+            context: Retrieved chunks to use as context
+            conversation_context: Optional conversation history for multi-turn dialogue
 
         Returns a GeneratedAnswer with:
         - Answer text (grounded in context)
@@ -160,7 +165,7 @@ class LLMGenerator:
         # Build context from selected chunks
         context_text = self._context_budget.build_context_string(selected_chunks)
         system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(question, context_text)
+        user_prompt = self._build_user_prompt(question, context_text, conversation_context)
 
         # Generate answer — use LLM if available, else echo context
         if self._provider is not None:
@@ -206,10 +211,23 @@ Rules:
 4. Be precise and cite specific details from the context.
 5. If the question cannot be answered from the context, politely decline."""
 
-    def _build_user_prompt(self, question: str, context: str) -> str:
-        return f"""Context:
+    def _build_user_prompt(self, question: str, context: str, conversation_context: str | None = None) -> str:
+        prompt_parts = []
+        
+        # Add conversation history if available
+        if conversation_context:
+            prompt_parts.append(f"""Previous Conversation:
+{conversation_context}
+
+---
+
+""")
+        
+        prompt_parts.append(f"""Context:
 {context}
 
 Question: {question}
 
-Answer based ONLY on the context above:"""
+Answer based ONLY on the context above:""")
+        
+        return "".join(prompt_parts)

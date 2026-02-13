@@ -21,6 +21,9 @@ class EmbedResponse(BaseModel):
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1)
     top_k: int = Field(5, ge=1, le=50)
+    session_id: str | None = Field(None, description="Session ID for conversation memory")
+    use_decomposition: bool = Field(False, description="Use query decomposition for complex questions")
+    include_suggestions: bool = Field(True, description="Include follow-up question suggestions")
 
 
 class RetrievedChunkOut(BaseModel):
@@ -37,7 +40,19 @@ class Citation(BaseModel):
     text_snippet: str | None
 
 
+class SubQueryResult(BaseModel):
+    """Result from a decomposed sub-query."""
+    question: str
+    answer: str
+    priority: int
+    citations: list[Citation] = []
+
+
 class QueryResponse(BaseModel):
     answer: str
     citations: list[Citation] = []
     matches: list[RetrievedChunkOut]
+    suggestions: list[str] = Field(default_factory=list, description="Suggested follow-up questions")
+    sub_queries: list[SubQueryResult] = Field(default_factory=list, description="Decomposed sub-queries if used")
+    agent_trace: list[str] = Field(default_factory=list, description="Agent reasoning steps for debugging")
+    conversation_summary: dict | None = Field(None, description="Conversation statistics if session is used")
