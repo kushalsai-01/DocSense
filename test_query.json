@@ -1,0 +1,6 @@
+{
+  "query": "What is artificial intelligence?",
+  "user_id": "00000000-0000-0000-0000-000000000001",
+  "session_id": "test-session-1",
+  "enable_planning": true
+}

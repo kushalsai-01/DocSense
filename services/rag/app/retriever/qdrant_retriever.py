@@ -1,13 +1,8 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
-
 from qdrant_client.http import models as qm
-
 from app.core.settings import settings
 from app.infra.qdrant.client import get_qdrant_client
-
-
 @dataclass(frozen=True)
 class RetrievedChunk:
     id: str
@@ -15,34 +10,24 @@ class RetrievedChunk:
     document_id: str | None
     text: str | None
     chunk_index: int | None = None
-
-
 class EmbedderInterface:
-    """Interface for embedders (for type safety)."""
-
     def embed_text(self, text: str) -> list[float]:
         raise NotImplementedError
-
     @property
     def vector_size(self) -> int:
         raise NotImplementedError
-
-
 class QdrantRetriever:
     def __init__(self, embedder: EmbedderInterface):
         self._client = get_qdrant_client()
         self._embedder = embedder
-
     def query(self, query_text: str, top_k: int) -> list[RetrievedChunk]:
         vector = self._embedder.embed_text(query_text)
-
         results = self._client.search(
             collection_name=settings.qdrant_collection,
             query_vector=vector,
             limit=top_k,
             with_payload=True,
         )
-
         out: list[RetrievedChunk] = []
         for p in results:
             payload = p.payload or {}
@@ -57,17 +42,10 @@ class QdrantRetriever:
                 )
             )
         return out
-
     def upsert_chunks(self, document_id: str, chunks: list[tuple[str, int, str]]) -> int:
-        """Upsert chunk points into Qdrant.
-
-        chunks: list of (chunk_id, chunk_index, text)
-        """
         if not chunks:
             return 0
-
         vectors = self._embedder.embed_texts([c[2] for c in chunks])
-
         points: list[qm.PointStruct] = []
         for (chunk_id, chunk_index, text), vector in zip(chunks, vectors, strict=True):
             points.append(
@@ -81,12 +59,9 @@ class QdrantRetriever:
                     },
                 )
             )
-
         self._client.upsert(collection_name=settings.qdrant_collection, points=points)
         return len(points)
-
     def delete_by_document(self, document_id: str) -> int:
-        """Delete all points in Qdrant whose payload.document_id matches."""
         self._client.delete(
             collection_name=settings.qdrant_collection,
             points_selector=qm.FilterSelector(
@@ -100,5 +75,4 @@ class QdrantRetriever:
                 )
             ),
         )
-        # Qdrant delete does not return a count; return 0 as a sentinel.
         return 0

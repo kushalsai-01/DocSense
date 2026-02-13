@@ -3,6 +3,7 @@ package documents
 import (
 	"database/sql"
 
+	"docsense/api/internal/adapters/agent"
 	"docsense/api/internal/adapters/rag"
 )
 
@@ -11,6 +12,7 @@ import (
 // Responsibilities:
 // - Transport-level validation (file presence, size/type checks)
 // - Orchestration of infrastructure calls (storage + DB + RAG service)
+// - Routing queries through Agent service when enabled
 //
 // Business rules and domain logic can be introduced later.
 type Handler struct {
@@ -18,8 +20,17 @@ type Handler struct {
 	storageDir     string
 	maxUploadBytes int64
 	ragClient      *rag.Client
+	agentClient    *agent.Client
+	agentEnabled   bool
 }
 
-func NewHandler(db *sql.DB, storageDir string, maxUploadBytes int64, ragClient *rag.Client) *Handler {
-	return &Handler{db: db, storageDir: storageDir, maxUploadBytes: maxUploadBytes, ragClient: ragClient}
+func NewHandler(db *sql.DB, storageDir string, maxUploadBytes int64, ragClient *rag.Client, agentClient *agent.Client, agentEnabled bool) *Handler {
+	return &Handler{
+		db:             db,
+		storageDir:     storageDir,
+		maxUploadBytes: maxUploadBytes,
+		ragClient:      ragClient,
+		agentClient:    agentClient,
+		agentEnabled:   agentEnabled,
+	}
 }

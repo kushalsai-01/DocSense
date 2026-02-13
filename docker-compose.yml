@@ -6,12 +6,13 @@ services:
     container_name: docsense-postgres
     restart: unless-stopped
     env_file:
-      - ./env/postgres.env
+      - ./infra/compose/env/postgres.env
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../postgres/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./infra/postgres/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./infra/postgres/002_agent_tables.sql:/docker-entrypoint-initdb.d/02_agent_tables.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U docsense"]
       interval: 5s
@@ -23,7 +24,7 @@ services:
     container_name: docsense-qdrant
     restart: unless-stopped
     env_file:
-      - ./env/qdrant.env
+      - ./infra/compose/env/qdrant.env
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -38,12 +39,12 @@ services:
 
   api:
     build:
-      context: ../../services/api
+      context: ./services/api
       dockerfile: Dockerfile
     container_name: docsense-api
     restart: unless-stopped
     env_file:
-      - ./env/api.env
+      - ./infra/compose/env/api.env
     ports:
       - "8080:8080"
     depends_on:
@@ -62,12 +63,12 @@ services:
 
   rag:
     build:
-      context: ../../services/rag
+      context: ./services/rag
       dockerfile: Dockerfile
     container_name: docsense-rag
     restart: unless-stopped
     env_file:
-      - ./env/rag.env
+      - ./infra/compose/env/rag.env
     ports:
       - "8000:8000"
     depends_on:
@@ -80,20 +81,42 @@ services:
       retries: 10
       start_period: 30s
 
+  agent:
+    build:
+      context: ./services/agent
+      dockerfile: Dockerfile
+    container_name: docsense-agent
+    restart: unless-stopped
+    env_file:
+      - ./infra/compose/env/agent.env
+    ports:
+      - "8100:8100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rag:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8100/agent/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   web:
     build:
-      context: ../../apps/web
+      context: ./apps/web
       dockerfile: Dockerfile
     container_name: docsense-web
     restart: unless-stopped
     env_file:
-      - ./env/web.env
+      - ./infra/compose/env/web.env
     ports:
       - "5173:5173"
     depends_on:
       api:
         condition: service_healthy
-      rag:
+      agent:
         condition: service_healthy
 
 volumes:

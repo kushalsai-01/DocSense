@@ -58,6 +58,8 @@ export default function AppHome() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [isQuerying, setIsQuerying] = useState(false)
+  const [pipelineMode, setPipelineMode] = useState<'rag' | 'agent'>('rag')
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -180,7 +182,7 @@ export default function AppHome() {
       const res = await fetch('/api/documents/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-User-Id': USER_ID },
-        body: JSON.stringify({ query: text, top_k: 5 }),
+        body: JSON.stringify({ query: text, top_k: 5, pipeline_mode: pipelineMode }),
       })
 
       if (!res.ok) {
@@ -232,6 +234,32 @@ export default function AppHome() {
 
   function clearChat() {
     setMessages([])
+  }
+
+  async function deleteDocument(docId: string) {
+    if (!confirm('Delete this document? This cannot be undone.')) return
+    
+    setDeletingDocId(docId)
+    try {
+      const res = await fetch(`http://localhost:8080/api/documents/${docId}`, {
+        method: 'DELETE',
+        headers: { 'x-user-id': USER_ID },
+      })
+
+      if (!res.ok) {
+        throw new Error('Failed to delete document')
+      }
+
+      setDocuments(prev => prev.filter(d => d.id !== docId))
+      setUploadSuccess('Document deleted successfully')
+      setTimeout(() => setUploadSuccess(null), 3000)
+    } catch (err) {
+      console.error('Delete error:', err)
+      setUploadError('Failed to delete document')
+      setTimeout(() => setUploadError(null), 3000)
+    } finally {
+      setDeletingDocId(null)
+    }
   }
 
   /* ── Render ── */
@@ -337,6 +365,21 @@ export default function AppHome() {
                       >
                         {doc.status ?? 'ready'}
                       </Badge>
+                      <button
+                        onClick={() => deleteDocument(doc.id)}
+                        disabled={deletingDocId === doc.id}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-500/10 rounded text-zinc-500 hover:text-red-400 disabled:opacity-50"
+                        title="Delete document"
+                      >
+                        {deletingDocId === doc.id ? (
+                          <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                        ) : (
+                          <IconTrash className="h-3.5 w-3.5" />
+                        )}
+                      </button>
                     </div>
                   </li>
                 ))}
@@ -380,10 +423,30 @@ export default function AppHome() {
 
           <div className="flex-1" />
 
-          <Badge variant="info">
-            <IconSparkles className="h-3 w-3" />
-            RAG Pipeline
-          </Badge>
+          <div className="flex items-center gap-2 rounded-lg bg-surface-raised border border-zinc-800/50 p-1">
+            <button
+              onClick={() => setPipelineMode('rag')}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                pipelineMode === 'rag'
+                  ? 'bg-brand-500/20 text-brand-300'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <IconSparkles className="h-3 w-3" />
+              RAG
+            </button>
+            <button
+              onClick={() => setPipelineMode('agent')}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                pipelineMode === 'agent'
+                  ? 'bg-purple-500/20 text-purple-300'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <IconSparkles className="h-3 w-3" />
+              Agent
+            </button>
+          </div>
 
           {messages.length > 0 && (
             <button

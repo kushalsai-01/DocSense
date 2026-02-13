@@ -1,9 +1,6 @@
-"""Agentic AI module for enhanced RAG capabilities."""
-
 from app.agent.memory import ConversationMemory, ConversationManager
 from app.agent.decomposer import QueryDecomposer, SubQuery, QueryExpander
 from app.agent.suggestions import SuggestionEngine
-
 __all__ = [
     "ConversationMemory",
     "ConversationManager",

@@ -46,12 +46,25 @@ type RAGConfig struct {
 	Timeout time.Duration
 }
 
+type AgentConfig struct {
+	// BaseURL is the base URL of the Agent service (e.g., "http://agent:8100")
+	BaseURL string
+
+	// Timeout is the HTTP client timeout for Agent service calls
+	Timeout time.Duration
+
+	// Enabled controls whether queries route through the agent layer.
+	// When false, queries go directly to RAG (backward-compatible).
+	Enabled bool
+}
+
 type Config struct {
 	App      AppConfig
 	HTTP     HTTPConfig
 	Postgres PostgresConfig
 	Storage  StorageConfig
 	RAG      RAGConfig
+	Agent    AgentConfig
 }
 
 // LoadFromEnv loads configuration purely from environment variables.
@@ -80,6 +93,10 @@ func LoadFromEnv() (Config, error) {
 
 	cfg.RAG.BaseURL = getenvDefault("RAG_SERVICE_URL", "http://rag:8000")
 	cfg.RAG.Timeout = getenvDurationDefault("RAG_SERVICE_TIMEOUT", 60*time.Second)
+
+	cfg.Agent.BaseURL = getenvDefault("AGENT_SERVICE_URL", "http://agent:8100")
+	cfg.Agent.Timeout = getenvDurationDefault("AGENT_SERVICE_TIMEOUT", 90*time.Second)
+	cfg.Agent.Enabled = getenvDefault("AGENT_ENABLED", "true") == "true"
 
 	if cfg.HTTP.Port <= 0 {
 		return Config{}, fmt.Errorf("invalid HTTP_PORT: %d", cfg.HTTP.Port)

@@ -1,4 +1,4 @@
-# Node
+# ─── Node / Frontend ───
 node_modules/
 dist/
 .vite/
@@ -10,38 +10,54 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Python
+# ─── Python ───
 __pycache__/
 *.pyc
+*.pyo
 .venv/
+venv/
+env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+*.egg-info/
 
-# Go
+# ─── Go ───
 /bin/
 *.exe
-
-# Go tooling
 *.test
 *.out
 coverage.out
 
-# Env
+# ─── Environment & Secrets ───
 .env
-.env.*
+.env.local
+.env.*.local
+infra/compose/env/*.env
+!infra/compose/env/*.env.example
 
-# Local scratch
-.local/
+# ─── Docker ───
+docker-compose.override.yml
 
-# OS
+# ─── Data / Volumes (never commit) ───
+*.db
+*.sqlite3
+data/
+
+# ─── OS ───
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Editor
+# ─── Editor / IDE ───
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+
+# ─── Logs ───
+*.log
+logs/

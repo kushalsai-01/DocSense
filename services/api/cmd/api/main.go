@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"docsense/api/internal/adapters/agent"
 	"docsense/api/internal/adapters/config"
 	"docsense/api/internal/adapters/postgres"
 	"docsense/api/internal/adapters/rag"
@@ -51,10 +52,22 @@ func main() {
 
 	ragClient := rag.NewClient(cfg.RAG)
 
+	// Initialize Agent client (queries route through Agent → RAG when enabled)
+	var agentClient *agent.Client
+	if cfg.Agent.Enabled {
+		agentClient = agent.NewClient(agent.AgentConfig{
+			BaseURL: cfg.Agent.BaseURL,
+			Timeout: cfg.Agent.Timeout,
+		})
+		log.Printf("agent service enabled: %s", cfg.Agent.BaseURL)
+	} else {
+		log.Printf("agent service disabled, queries go directly to RAG")
+	}
+
 	api := router.Group("/api")
 	auth.RegisterRoutes(api)
 	users.RegisterRoutes(api)
-	documents.NewHandler(db, cfg.Storage.Dir, cfg.Storage.MaxUploadBytes, ragClient).RegisterRoutes(api)
+	documents.NewHandler(db, cfg.Storage.Dir, cfg.Storage.MaxUploadBytes, ragClient, agentClient, cfg.Agent.Enabled).RegisterRoutes(api)
 
 	router.GET("/health", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)

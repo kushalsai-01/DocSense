@@ -1,0 +1,44 @@
+# Git
+.git/
+.github/
+.gitignore
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# Environment & config
+.env
+.env.*
+.editorconfig
+.vscode/
+.idea/
+
+# Node
+node_modules/
+apps/web/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Go build artifacts
+*.exe
+*.test
+*.out
+
+# Docker
+docker-compose*.yml
+Dockerfile
+.dockerignore
+
+# Misc
+tmp/
+*.log
+data/
