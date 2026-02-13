@@ -188,36 +188,41 @@ class AgentExecutor:
             case _:
                 return await self._tools.search(query, top_k=params.get("top_k", 5))
     async def _synthesize(self, state: AgentState, conversation_context: str | None) -> str:
-        if len(state.intermediate_answers) == 1:
-            return state.intermediate_answers[0]
         if not state.intermediate_answers:
             return "I couldn't find sufficient information in the documents to answer your question."
+        
+        # ALWAYS synthesize to ensure Agent produces enhanced, structured output
         synthesis_prompt = self._build_synthesis_prompt(state, conversation_context)
         try:
-            answer = await self._llm.agenerate(synthesis_prompt, max_tokens=2500, temperature=0.1)
+            answer = await self._llm.agenerate(synthesis_prompt, max_tokens=2500, temperature=0.2)
             return answer.strip()
         except Exception as exc:
             logger.warning("synthesis_fallback", error=str(exc))
             return "\n\n".join(state.intermediate_answers)
     def _build_synthesis_prompt(self, state: AgentState, context: str | None) -> str:
         parts = [
-            "You are an AI assistant synthesizing information from multiple sources to answer a user's question.",
-            f"\nOriginal Question: {state.query}\n",
+            "You are an advanced AI agent with deep analytical reasoning.",
+            "Your role is to take retrieved information and produce an ENHANCED, COMPREHENSIVE answer.",
+            f"\nUser's Question: {state.query}\n",
         ]
         if context:
             parts.append(f"Conversation Context:\n{context}\n")
         parts.append("Retrieved Information:")
         for i, answer in enumerate(state.intermediate_answers, 1):
-            parts.append(f"\n--- Information {i} ---\n{answer}")
+            parts.append(f"\n--- Document Excerpt {i} ---\n{answer}")
         parts.append(
-            "\n\nProvide a comprehensive, well-structured answer that:\n"
-            "1. Synthesizes ALL retrieved information into a coherent response\n"
-            "2. DO NOT include references like 'Source 1' or 'Information 1' in your answer\n"
-            "3. Present the information naturally as if it's your knowledge\n"
-            "4. Use bullet points or sections for clarity when appropriate\n"
-            "5. Be thorough and complete - include ALL relevant information\n"
-            "6. If information seems incomplete, acknowledge it briefly\n"
-            "7. Provide a professional, readable answer\n"
+            "\n\n🎯 YOUR TASK - Provide an ENHANCED Answer:\n"
+            "1. ANALYZE the information thoroughly and add insights\n"
+            "2. REORGANIZE into clear sections with **bold headers**\n"
+            "3. ADD context, explanations, and connections between concepts\n"
+            "4. EXPAND on key points with deeper analysis\n"
+            "5. USE hierarchical bullet structure (parent → child points)\n"
+            "6. COMPARE or CONTRAST concepts when relevant\n"
+            "7. START with a summary overview if question is complex\n"
+            "8. NEVER mention 'Source 1', 'Document 1', 'Information 1', 'Retrieved from'\n"
+            "9. Present as your own expert knowledge\n"
+            "10. Be MORE comprehensive than raw retrieved text\n"
+            "\nProvide a professional, well-structured, detailed response.\n"
         )
         return "\n".join(parts)
     def _extract_answer(self, result: ToolResult) -> str:
