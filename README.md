@@ -6,14 +6,6 @@ Production-grade document intelligence platform powered by Retrieval-Augmented G
 
 A reference implementation of an intelligent document management system that combines RAG with an Agentic AI layer for multi-step reasoning, query planning, and self-evaluation. Built to demonstrate production patterns: explicit service boundaries, structured data flow, persistent conversation memory, and engineering trade-offs documented in code.
 
-This is not a demo. This is how AI-powered document systems are built when clarity, reliability, and maintainability matter.
-
-## What This Project Is Not
-
-- A chatbot template
-- A minimal viable product
-- Production-ready without modifications
-- An all-in-one framework
 
 ## System Architecture
 
