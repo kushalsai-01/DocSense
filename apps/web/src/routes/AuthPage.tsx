@@ -5,6 +5,8 @@ import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import { useAuth } from '../auth/AuthContext'
+import { auth, googleProvider, isFirebaseConfigured } from '../auth/firebase'
+import { signInWithPopup } from 'firebase/auth'
 
 // ── Schemas ───────────────────────────────────────────────────────────
 
@@ -42,7 +44,7 @@ function passwordStrength(pw: string): { label: string; color: string; width: st
 
 export default function AuthPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  const { login, register } = useAuth()
+  const { login, register, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
 
   const loginForm = useForm<LoginForm>({ resolver: zodResolver(loginSchema) })
@@ -68,6 +70,23 @@ export default function AuthPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Registration failed'
       registerForm.setError('email', { message: msg })
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    if (!isFirebaseConfigured || !auth || !googleProvider) {
+      toast.error('Google auth is not configured yet. Set VITE_FIREBASE_* env vars and redeploy.')
+      return
+    }
+    try {
+      const result = await signInWithPopup(auth, googleProvider)
+      const idToken = await result.user.getIdToken()
+      await loginWithGoogle(idToken)
+      toast.success('Signed in with Google')
+      navigate('/documents')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Google sign-in failed'
+      toast.error(msg)
     }
   }
 
@@ -144,6 +163,13 @@ export default function AuthPage() {
               >
                 {loginForm.formState.isSubmitting ? 'Signing in…' : 'Sign In'}
               </button>
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 py-2.5 text-sm font-semibold text-white hover:border-gray-600 disabled:opacity-50"
+              >
+                Continue with Google
+              </button>
             </form>
           )}
 
@@ -214,6 +240,13 @@ export default function AuthPage() {
                 className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
               >
                 {registerForm.formState.isSubmitting ? 'Creating account…' : 'Create Account'}
+              </button>
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 py-2.5 text-sm font-semibold text-white hover:border-gray-600 disabled:opacity-50"
+              >
+                Continue with Google
               </button>
             </form>
           )}

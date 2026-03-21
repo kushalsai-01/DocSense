@@ -17,6 +17,9 @@ const envSchema = z.object({
   CHUNK_OVERLAP: z.string().default('50'),
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
   LOG_LEVEL: z.string().default('info'),
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
 })
 
 function parseEnv() {
@@ -48,6 +51,9 @@ const cfg = Object.freeze({
   chunkOverlap: parseInt(env.CHUNK_OVERLAP, 10),
   allowedOrigins: env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()),
   logLevel: env.LOG_LEVEL,
+  firebaseProjectId: env.FIREBASE_PROJECT_ID,
+  firebaseClientEmail: env.FIREBASE_CLIENT_EMAIL,
+  firebasePrivateKey: env.FIREBASE_PRIVATE_KEY,
 })
 
 export default cfg

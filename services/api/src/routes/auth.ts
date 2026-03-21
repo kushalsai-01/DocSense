@@ -9,6 +9,7 @@ import { pool } from '../models/db'
 import { authenticate, blacklistToken } from '../middleware/auth'
 import { AuthRequest, JwtPayload } from '../types'
 import { logger } from '../lib/logger'
+import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from '../lib/firebaseAdmin'
 
 export const authRouter = Router()
 
@@ -30,6 +31,10 @@ const loginSchema = z.object({
 
 const refreshSchema = z.object({
   refreshToken: z.string().min(10),
+})
+
+const googleLoginSchema = z.object({
+  idToken: z.string().min(20),
 })
 
 function durationToSeconds(duration: string): number {
@@ -157,6 +162,84 @@ authRouter.post('/login', async (req: Request, res: Response) => {
 
   logger.info('user_login', { userId: user.id })
   res.json({ token: accessToken, refreshToken, user })
+})
+
+authRouter.post('/google', async (req: Request, res: Response) => {
+  if (!isFirebaseAdminConfigured()) {
+    res.status(503).json({
+      error:
+        'Google sign-in is not configured on server. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY.',
+    })
+    return
+  }
+
+  const { idToken } = googleLoginSchema.parse(req.body)
+  const adminAuth = getFirebaseAdminAuth()
+  const decoded = await adminAuth.verifyIdToken(idToken)
+  const email = decoded.email
+
+  if (!email) {
+    res.status(400).json({ error: 'Google account email is required' })
+    return
+  }
+
+  const displayName = (decoded.name?.trim() || email.split('@')[0] || 'User').slice(0, 255)
+  const client = await pool.connect()
+
+  try {
+    await client.query('BEGIN')
+
+    let userId: string
+    let userName: string
+
+    const existingUser = await client.query<{ id: string; email: string; name: string }>(
+      'SELECT id, email, name FROM users WHERE email = $1',
+      [email]
+    )
+
+    if (existingUser.rows[0]) {
+      userId = existingUser.rows[0].id
+      userName = existingUser.rows[0].name
+    } else {
+      const randomPasswordHash = await bcrypt.hash(uuidv4(), 12)
+      const created = await client.query<{ id: string; email: string; name: string }>(
+        'INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id, email, name',
+        [email, randomPasswordHash, displayName]
+      )
+      userId = created.rows[0].id
+      userName = created.rows[0].name
+
+      const baseSlug = slugify(`${displayName}-personal`) || 'workspace'
+      const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`
+      const qdrantNamespace = `ws_${uuidv4()}`
+      const wsResult = await client.query<{ id: string }>(
+        `INSERT INTO workspaces (name, slug, owner_id, qdrant_namespace)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [`${displayName}'s Workspace`, slug, userId, qdrantNamespace]
+      )
+
+      await client.query(
+        `INSERT INTO workspace_members (workspace_id, user_id, role, invited_by)
+         VALUES ($1, $2, 'admin', $2)`,
+        [wsResult.rows[0].id, userId]
+      )
+    }
+
+    await client.query('COMMIT')
+
+    const { accessToken, refreshToken } = await createTokenPair({ id: userId, email })
+    logger.info('user_login_google', { userId, email })
+    res.json({
+      token: accessToken,
+      refreshToken,
+      user: { id: userId, email, name: userName },
+    })
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 })
 
 authRouter.post('/refresh', async (req: Request, res: Response) => {
