@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-service
+  namespace: docsense
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agent-service
+  template:
+    metadata:
+      labels:
+        app: agent-service
+    spec:
+      containers:
+      - name: agent-service
+        image: docsense/agent-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8100
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: docsense-secrets
+              key: DATABASE_URL
+        - name: RAG_SERVICE_URL
+          value: http://rag-service:8000
+        - name: REDIS_URL
+          value: redis://redis:6379
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: docsense-secrets
+              key: OPENAI_API_KEY
+        - name: LANGCHAIN_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: docsense-secrets
+              key: LANGCHAIN_API_KEY
+        - name: LANGCHAIN_TRACING_V2
+          value: "true"
+        readinessProbe:
+          httpGet:
+            path: /agent/health
+            port: 8100
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        livenessProbe:
+          httpGet:
+            path: /agent/health
+            port: 8100
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-service
+  namespace: docsense
+spec:
+  selector:
+    app: agent-service
+  ports:
+  - port: 8100

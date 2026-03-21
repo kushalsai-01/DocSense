@@ -25,6 +25,14 @@ def on_startup() -> None:
     except Exception as exc:
         logger.error("Failed to ensure Qdrant collection: %s", exc)
         raise
+
+    if settings.query_history_enabled:
+        try:
+            from app.infra.qdrant.query_history import ensure_query_history_collection
+            ensure_query_history_collection()
+            logger.info("Query history collection ready")
+        except Exception as exc:
+            logger.warning("Query history collection setup failed: %s", exc)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

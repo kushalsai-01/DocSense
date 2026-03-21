@@ -1,27 +1,34 @@
-# Build stage
-FROM golang:1.24-alpine AS build
+# ── Build stage ──────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
 
-WORKDIR /src
+WORKDIR /app
 
-COPY go.mod go.sum ./
-RUN go mod download
+COPY package*.json tsconfig.json ./
+RUN npm ci --include=dev
 
-COPY cmd ./cmd
-COPY internal ./internal
+COPY src ./src
+RUN npm run build
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/api ./cmd/api
+# ── Production stage ─────────────────────────────────────────────────
+FROM node:20-alpine AS production
 
-# Runtime stage — Alpine for health check support (wget)
-FROM alpine:3.20
+RUN addgroup -g 1001 -S nodejs && adduser -S docsense -u 1001
 
-RUN apk add --no-cache wget ca-certificates
+WORKDIR /app
 
-WORKDIR /
-COPY --from=build /out/api /api
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Ensure the default upload directory exists (volume-mounted in compose).
-RUN mkdir -p /data
+COPY --from=builder /app/dist ./dist
+COPY src/db/migrations ./dist/db/migrations
 
-EXPOSE 8080
+RUN mkdir -p /app/uploads && chown docsense:nodejs /app/uploads
 
-ENTRYPOINT ["/api"]
+USER docsense
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+
+CMD ["node", "dist/server.js"]

@@ -7,3 +7,17 @@ torch==2.5.1
 transformers==4.47.0
 openai==1.57.0
 google-generativeai==0.8.3
+
+# ── Hybrid retrieval ──────────────────────────────────────────
+rank-bm25==0.2.2
+cohere==4.57
+nltk==3.8.1
+redis==5.0.1
+asyncpg==0.30.0
+
+# ── Pinecone (optional alternative vector backend) ─────────────
+# pinecone-client>=3.0.0
+
+# ── RAGAS evaluation (optional — requires OpenAI key) ──────────
+# ragas==0.1.21
+# datasets==2.19.0

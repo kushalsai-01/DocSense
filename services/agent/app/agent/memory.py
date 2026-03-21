@@ -1,11 +1,18 @@
 from __future__ import annotations
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
+from app.core.redis_client import cache_get, cache_set, cache_delete
+
 logger = get_logger(__name__)
+
+_CONTEXT_CACHE_TTL = 1800  # 30 minutes
+
+
 class ConversationMemory:
     def __init__(self, session: AsyncSession):
         self._db = session
@@ -38,7 +45,6 @@ class ConversationMemory:
         citations: list[dict] | None = None,
         metadata: dict | None = None,
     ) -> str:
-        import json
         msg_id = str(uuid.uuid4())
         await self._db.execute(
             text(
@@ -54,10 +60,20 @@ class ConversationMemory:
                 "metadata": json.dumps(metadata or {}),
             },
         )
+        # Invalidate context cache so the next get_context call fetches fresh data
+        await self.invalidate_context_cache(conversation_id)
         return msg_id
     async def get_context(
         self, conversation_id: str, last_n: int = 10
     ) -> str:
+        # Try Redis cache first
+        cache_key = f"context:{conversation_id}:{last_n}"
+        cached = await cache_get(cache_key)
+        if cached and "context" in cached:
+            logger.debug("context_cache_hit", conversation_id=conversation_id)
+            return cached["context"]
+
+        # Fall back to PostgreSQL
         result = await self._db.execute(
             text(
                 "SELECT role, content FROM messages "
@@ -71,7 +87,16 @@ class ConversationMemory:
         if not rows:
             return ""
         lines = [f"{row.role.upper()}: {row.content}" for row in reversed(rows)]
-        return "\n".join(lines)
+        context = "\n".join(lines)
+
+        # Cache result
+        await cache_set(cache_key, {"context": context}, ttl=_CONTEXT_CACHE_TTL)
+        return context
+
+    async def invalidate_context_cache(self, conversation_id: str) -> None:
+        """Invalidate cached context after a new turn is saved."""
+        for n in (10, 20):
+            await cache_delete(f"context:{conversation_id}:{n}")
     async def get_conversation_summary(self, conversation_id: str) -> dict:
         result = await self._db.execute(
             text(

@@ -2,6 +2,16 @@ from __future__ import annotations
 import httpx
 from app.core.config import settings
 from app.core.logging import get_logger
+
+try:
+    from langsmith import traceable as _traceable
+except ImportError:
+    def _traceable(**_kwargs):  # type: ignore[misc]
+        """No-op decorator when langsmith is not installed."""
+        def decorator(fn):
+            return fn
+        return decorator
+
 logger = get_logger(__name__)
 class ToolResult:
     def __init__(self, tool_name: str, success: bool, data: dict | list | str, error: str | None = None):
@@ -61,9 +71,13 @@ class RAGClient:
 class AgentTools:
     def __init__(self, rag_client: RAGClient | None = None):
         self.rag = rag_client or RAGClient()
+
+    @_traceable(name="tool_search", tags=["tools", "search"])
     async def search(self, query: str, top_k: int = 5) -> ToolResult:
         logger.info("tool_search", query=query, top_k=top_k)
         return await self.rag.search(query, top_k)
+
+    @_traceable(name="tool_compare", tags=["tools", "compare"])
     async def compare(self, queries: list[str], top_k: int = 3) -> ToolResult:
         logger.info("tool_compare", num_queries=len(queries))
         results = []
@@ -75,6 +89,8 @@ class AgentTools:
                 "citations": result.data.get("citations", []) if result.success else [],
             })
         return ToolResult(tool_name="compare", success=True, data=results)
+
+    @_traceable(name="tool_summarize", tags=["tools", "summarize"])
     async def summarize(self, query: str, top_k: int = 8) -> ToolResult:
         logger.info("tool_summarize", query=query)
         result = await self.rag.search(query, top_k)
@@ -89,6 +105,8 @@ class AgentTools:
                 },
             )
         return ToolResult(tool_name="summarize", success=False, data={}, error=result.error)
+
+    @_traceable(name="tool_extract", tags=["tools", "extract"])
     async def extract(self, query: str, fields: list[str] | None = None) -> ToolResult:
         logger.info("tool_extract", query=query, fields=fields)
         extraction_query = query

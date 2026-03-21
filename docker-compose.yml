@@ -1,128 +1,187 @@
-name: docsense
+version: '3.9'
 
 services:
+  # ── Databases & stores ─────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: docsense-postgres
     restart: unless-stopped
-    env_file:
-      - ./infra/compose/env/postgres.env
-    ports:
-      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-docsense}
+      POSTGRES_USER: ${POSTGRES_USER:-docsense}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/postgres/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ./infra/postgres/002_agent_tables.sql:/docker-entrypoint-initdb.d/02_agent_tables.sql:ro
+      - ./infra/postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U docsense"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-docsense}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docsense-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: docsense-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docsense-internal
 
   qdrant:
-    image: qdrant/qdrant:v1.12.1
+    image: qdrant/qdrant:v1.12.0
     container_name: docsense-qdrant
     restart: unless-stopped
-    env_file:
-      - ./infra/compose/env/qdrant.env
-    ports:
-      - "6333:6333"
-      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
-      interval: 5s
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/health || exit 1"]
+      interval: 15s
       timeout: 5s
-      retries: 15
-      start_period: 10s
+      retries: 5
+    networks:
+      - docsense-internal
 
+  # ── AI/ML services ─────────────────────────────────────────────────
+  rag-service:
+    build:
+      context: ./services/rag
+      dockerfile: Dockerfile
+    container_name: docsense-rag
+    restart: unless-stopped
+    env_file: ./infra/compose/env/rag.env
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - docsense-internal
+    volumes:
+      - rag_models:/app/models
+
+  agent-service:
+    build:
+      context: ./services/agent
+      dockerfile: Dockerfile
+    container_name: docsense-agent
+    restart: unless-stopped
+    env_file: ./infra/compose/env/agent.env
+    environment:
+      - DATABASE_URL=postgresql://docsense:${POSTGRES_PASSWORD}@postgres:5432/docsense
+      - RAG_SERVICE_URL=http://rag-service:8000
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rag-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8100/agent/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - docsense-internal
+
+  # ── Application layer ──────────────────────────────────────────────
   api:
     build:
       context: ./services/api
       dockerfile: Dockerfile
     container_name: docsense-api
     restart: unless-stopped
-    env_file:
-      - ./infra/compose/env/api.env
-    ports:
-      - "8080:8080"
+    env_file: ./infra/compose/env/api.env
+    environment:
+      - DATABASE_URL=postgresql://docsense:${POSTGRES_PASSWORD}@postgres:5432/docsense
+      - AGENT_SERVICE_URL=http://agent-service:8100
+      - RAG_SERVICE_URL=http://rag-service:8000
+      - REDIS_URL=redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
-      qdrant:
+      agent-service:
         condition: service_healthy
-    volumes:
-      - api_data:/data
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 5s
-
-  rag:
-    build:
-      context: ./services/rag
-      dockerfile: Dockerfile
-    container_name: docsense-rag
-    restart: unless-stopped
-    env_file:
-      - ./infra/compose/env/rag.env
-    ports:
-      - "8000:8000"
-    depends_on:
-      qdrant:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
-  agent:
-    build:
-      context: ./services/agent
-      dockerfile: Dockerfile
-    container_name: docsense-agent
-    restart: unless-stopped
-    env_file:
-      - ./infra/compose/env/agent.env
-    ports:
-      - "8100:8100"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rag:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8100/agent/health')\" || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
+      start_period: 20s
+    networks:
+      - docsense-internal
+      - docsense-public
+    volumes:
+      - uploads:/app/uploads
 
   web:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-/api}
     container_name: docsense-web
     restart: unless-stopped
-    env_file:
-      - ./infra/compose/env/web.env
+    networks:
+      - docsense-public
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: docsense-nginx
+    restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ssl_certs:/etc/ssl/certs
+      - nginx_logs:/var/log/nginx
     depends_on:
       api:
         condition: service_healthy
-      agent:
-        condition: service_healthy
+      web:
+        condition: service_started
+    networks:
+      - docsense-public
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t 2>/dev/null && echo ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   postgres_data:
-    name: docsense_postgres_data
+  redis_data:
   qdrant_data:
-    name: docsense_qdrant_data
-  api_data:
-    name: docsense_api_data
+  rag_models:
+  uploads:
+  ssl_certs:
+  nginx_logs:
+
+networks:
+  docsense-internal:
+    driver: bridge
+    internal: true
+  docsense-public:
+    driver: bridge

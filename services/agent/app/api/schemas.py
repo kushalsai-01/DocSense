@@ -4,6 +4,7 @@ class AgentQueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="User question")
     session_id: str | None = Field(None, description="Session ID for conversation persistence")
     user_id: str | None = Field(None, description="User ID for scoping")
+    workspace_id: str | None = Field(None, description="Workspace ID for hybrid retrieval scoping")
     top_k: int = Field(5, ge=1, le=50, description="Max retrieval results per search")
     enable_planning: bool = Field(True, description="Enable agent planning (vs direct search)")
     enable_evaluation: bool = Field(True, description="Enable self-evaluation")
@@ -17,6 +18,10 @@ class Citation(BaseModel):
     document_id: str | None = None
     chunk_index: int | None = None
     text_snippet: str | None = None
+    # Extended metadata for citation highlighting in the frontend
+    page_num: int | None = None
+    char_start: int | None = None
+    char_end: int | None = None
 class AgentStepOut(BaseModel):
     step: int
     phase: str
@@ -46,3 +51,19 @@ class HealthResponse(BaseModel):
     llm_available: bool = False
     rag_reachable: bool = False
     db_connected: bool = False
+
+
+class DocumentProcessRequest(BaseModel):
+    document_id: str = Field(..., description="UUID of the document to enrich")
+    full_text: str = Field(..., description="Full extracted text of the document")
+    chunks: list[str] = Field(default_factory=list, description="List of chunk texts")
+
+
+class DocumentIntelligenceResult(BaseModel):
+    document_id: str
+    summary: str
+    topics: list[str] = []
+    entities: dict = {}
+    key_insights: list[str] = []
+    document_type: str = "other"
+    processed_at: str

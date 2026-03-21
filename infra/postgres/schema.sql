@@ -1,94 +1,161 @@
--- DocSense PostgreSQL schema (metadata + relationships only)
--- Notes:
--- - No file binaries stored in Postgres.
--- - UUID primary keys using pgcrypto's gen_random_uuid().
--- - Timestamps use timestamptz.
+-- DocSense production schema
+-- Idempotent: safe to run multiple times
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- ── Extensions ────────────────────────────────────────────────────────
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Users: application identities (authentication data can be modeled separately later).
+-- ── Users ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
-    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    email         text NOT NULL,
-    display_name  text,
-    status        text NOT NULL DEFAULT 'active',
-
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    updated_at    timestamptz NOT NULL DEFAULT now()
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    email        VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name         VARCHAR(255),
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Case-insensitive uniqueness is typically preferred for email.
--- We keep it simple with lower(email) unique index (no citext dependency).
-CREATE UNIQUE INDEX IF NOT EXISTS users_email_uq ON users (lower(email));
-CREATE INDEX IF NOT EXISTS users_status_idx ON users (status);
+-- ── Sessions (JWT refresh tokens) ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS sessions (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID        REFERENCES users(id) ON DELETE CASCADE,
+    refresh_token VARCHAR(512) UNIQUE NOT NULL,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
 
+-- ── Workspaces ────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS workspaces (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id   UUID        REFERENCES users(id) ON DELETE CASCADE,
+    name       VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- Documents: metadata about uploaded/ingested content; not the file bytes.
+CREATE TABLE IF NOT EXISTS workspace_members (
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id      UUID REFERENCES users(id) ON DELETE CASCADE,
+    role         VARCHAR(50) DEFAULT 'member',
+    joined_at    TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (workspace_id, user_id)
+);
+
+-- ── Documents ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS documents (
-    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id        uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-
-    -- Upload/storage metadata (no file binaries stored here).
-    filename       text,
-    storage_path   text,
-
-    title          text,
-    source_type    text NOT NULL DEFAULT 'upload',
-    source_uri     text,
-
-    mime_type      text,
-    size_bytes     bigint,
-    checksum_sha256 text,
-
-    status         text NOT NULL DEFAULT 'ready',
-    metadata       jsonb NOT NULL DEFAULT '{}'::jsonb,
-
-    created_at     timestamptz NOT NULL DEFAULT now(),
-    updated_at     timestamptz NOT NULL DEFAULT now()
+    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID        REFERENCES users(id) ON DELETE CASCADE,
+    workspace_id      UUID        REFERENCES workspaces(id) ON DELETE CASCADE,
+    name              VARCHAR(500) NOT NULL,
+    original_filename VARCHAR(500),
+    file_type         VARCHAR(50),
+    file_size_bytes   INTEGER,
+    status            VARCHAR(50)  DEFAULT 'processing',  -- processing|ready|error
+    page_count        INTEGER,
+    chunk_count       INTEGER,
+    storage_path      VARCHAR(1000),
+    created_at        TIMESTAMPTZ DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS documents_user_id_idx ON documents (user_id);
-CREATE INDEX IF NOT EXISTS documents_status_idx ON documents (status);
-CREATE INDEX IF NOT EXISTS documents_created_at_idx ON documents (created_at);
--- Helpful for deduplicating uploads per-user when checksum is available.
-CREATE INDEX IF NOT EXISTS documents_user_checksum_idx ON documents (user_id, checksum_sha256);
-CREATE INDEX IF NOT EXISTS documents_user_storage_path_idx ON documents (user_id, storage_path);
-
-
--- Documents: full extracted text content for quick debug / small-document queries.
--- Keep this simple and easy to migrate later.
 CREATE TABLE IF NOT EXISTS document_contents (
-    document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
-    content     TEXT NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE UNIQUE,
+    full_text   TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
-
--- Document chunks: text segments derived from documents.
--- Embeddings live in Qdrant; we store only the relationship to the vector record.
 CREATE TABLE IF NOT EXISTS document_chunks (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id     uuid NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-
-    chunk_index     integer NOT NULL,
-    content_text    text NOT NULL,
-    token_count     integer,
-
-    -- Link to vector DB record (Qdrant point ID). Store as UUID; can be text if you prefer.
-    qdrant_point_id uuid,
-
-    -- Optional offsets if chunks are derived from a single normalized text stream.
-    start_offset    integer,
-    end_offset      integer,
-
-    content_sha256  text,
-
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    updated_at      timestamptz NOT NULL DEFAULT now(),
-
-    CONSTRAINT document_chunks_document_chunk_index_uq UNIQUE (document_id, chunk_index)
+    id              UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id     UUID    REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_index     INTEGER NOT NULL,
+    content         TEXT    NOT NULL,
+    token_count     INTEGER,
+    qdrant_point_id UUID,
+    created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS document_chunks_document_id_idx ON document_chunks (document_id);
-CREATE INDEX IF NOT EXISTS document_chunks_qdrant_point_id_idx ON document_chunks (qdrant_point_id);
-CREATE INDEX IF NOT EXISTS document_chunks_created_at_idx ON document_chunks (created_at);
+-- AI-enriched metadata (written by agent intelligence pipeline)
+CREATE TABLE IF NOT EXISTS document_metadata (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id   UUID REFERENCES documents(id) ON DELETE CASCADE UNIQUE,
+    summary       TEXT,
+    topics        JSONB       DEFAULT '[]',
+    entities      JSONB       DEFAULT '{}',
+    key_insights  JSONB       DEFAULT '[]',
+    document_type VARCHAR(100),
+    processed_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── Conversations & messages ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS conversations (
+    session_id   VARCHAR(255) PRIMARY KEY,
+    user_id      UUID        REFERENCES users(id) ON DELETE CASCADE,
+    workspace_id UUID        REFERENCES workspaces(id) ON DELETE CASCADE,
+    title        VARCHAR(500),
+    status       VARCHAR(50)  DEFAULT 'active',
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id    VARCHAR(255) REFERENCES conversations(session_id) ON DELETE CASCADE,
+    role          VARCHAR(50)  NOT NULL,  -- user|assistant
+    content       TEXT         NOT NULL,
+    citations     JSONB        DEFAULT '[]',
+    quality_score FLOAT,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── Agent traces ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS agent_actions (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id  VARCHAR(255),
+    message_id  UUID        REFERENCES messages(id) ON DELETE CASCADE,
+    action_type VARCHAR(100),  -- plan|tool_selection|tool_execution|observation|synthesis|evaluation
+    action_data JSONB,
+    duration_ms INTEGER,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── Analytics ─────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS query_analytics (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id    VARCHAR(255),
+    user_id       UUID        REFERENCES users(id),
+    workspace_id  UUID        REFERENCES workspaces(id),
+    query         TEXT,
+    strategy      VARCHAR(100),
+    quality_score FLOAT,
+    ragas_scores  JSONB,
+    duration_ms   INTEGER,
+    num_steps     INTEGER,
+    degraded      BOOLEAN     DEFAULT FALSE,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── Indexes ────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_documents_user_id       ON documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_documents_workspace_id  ON documents(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_documents_status        ON documents(status);
+
+CREATE INDEX IF NOT EXISTS idx_document_chunks_doc     ON document_chunks(document_id);
+
+CREATE INDEX IF NOT EXISTS idx_conversations_user_id   ON conversations(user_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_workspace ON conversations(workspace_id);
+
+CREATE INDEX IF NOT EXISTS idx_messages_session_id     ON messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at     ON messages(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_agent_actions_session   ON agent_actions(session_id);
+CREATE INDEX IF NOT EXISTS idx_agent_actions_msg_id    ON agent_actions(message_id);
+
+CREATE INDEX IF NOT EXISTS idx_query_analytics_user    ON query_analytics(user_id);
+CREATE INDEX IF NOT EXISTS idx_query_analytics_ws      ON query_analytics(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_query_analytics_date    ON query_analytics(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id        ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at     ON sessions(expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user  ON workspace_members(user_id);
