@@ -31,7 +31,7 @@ export default function LandingPage() {
         <div className="relative mx-auto max-w-4xl px-6 pb-20 pt-24 text-center sm:pt-32 sm:pb-28">
           <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-brand-500/20 bg-brand-500/5 px-4 py-1.5 text-xs font-medium text-brand-300">
             <IconSparkles className="h-3.5 w-3.5" />
-            Powered by RAG &amp; Sentence Transformers
+            Agentic AI + Hybrid RAG + RAGAS
           </div>
 
           <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
@@ -42,8 +42,8 @@ export default function LandingPage() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400">
-            Upload PDFs, text files, or markdown. Ask questions in natural language.
-            Get accurate, citation-backed answers grounded in your own data — no hallucination.
+            Upload PDFs, text files, or markdown. Ask questions in natural language and stream answers in real time.
+            DocSense grounds responses in your own documents with citations, quality scoring, and traceable reasoning steps.
           </p>
 
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
@@ -75,7 +75,7 @@ export default function LandingPage() {
               Three steps to document intelligence
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-zinc-400">
-              DocSense turns unstructured documents into a searchable, queryable knowledge base.
+              DocSense turns unstructured documents into a searchable, queryable knowledge base powered by a LangGraph agent.
             </p>
           </div>
 
@@ -84,19 +84,19 @@ export default function LandingPage() {
               step={1}
               icon={<IconUpload className="h-6 w-6" />}
               title="Upload documents"
-              description="Drop PDFs, TXT, or Markdown files. DocSense extracts text and splits it into semantic chunks with overlap."
+              description="Drop PDFs, TXT, or Markdown files. DocSense extracts text, enriches metadata, and prepares chunked context for retrieval."
             />
             <StepCard
               step={2}
               icon={<IconZap className="h-6 w-6" />}
               title="Automatic indexing"
-              description="Each chunk is converted into a 384-dimensional embedding vector and stored in a vector database for similarity search."
+              description="Chunks are indexed for hybrid retrieval (BM25 + semantic vectors) and stored in Qdrant for fast relevance matching."
             />
             <StepCard
               step={3}
               icon={<IconSparkles className="h-6 w-6" />}
               title="Ask anything"
-              description="Your question is embedded with the same model, matched against chunks via cosine similarity, and answered by an LLM constrained to your context."
+              description="A multi-step agent plans, retrieves, grades, and answers with streaming SSE, citations, and quality-aware evaluation."
             />
           </div>
         </div>
@@ -120,8 +120,8 @@ export default function LandingPage() {
             />
             <FeatureCard
               icon={<IconShield className="h-5 w-5" />}
-              title="Anti-hallucination prompts"
-              description="System prompts constrain the LLM to only use provided context. Temperature is set to 0 for deterministic output."
+              title="Grounded generation"
+              description="Retriever-grader flow and hallucination checks keep answers grounded in retrieved context, not model assumptions."
             />
             <FeatureCard
               icon={<IconFile className="h-5 w-5" />}
@@ -131,17 +131,17 @@ export default function LandingPage() {
             <FeatureCard
               icon={<IconZap className="h-5 w-5" />}
               title="Polyglot architecture"
-              description="Go API for high-performance file handling, Python service for ML inference — the right tool for each job."
+              description="Node.js API + Python FastAPI microservices: API gateway, agent orchestration, RAG retrieval, and analytics pipelines."
             />
             <FeatureCard
               icon={<IconSparkles className="h-5 w-5" />}
-              title="Semantic search"
-              description="Understands meaning, not keywords. 'ML model' and 'machine learning algorithm' return the same results."
+              title="Hybrid retrieval"
+              description="Combines keyword recall and semantic relevance so domain-specific terms and conceptual questions are both answered well."
             />
             <FeatureCard
               icon={<IconUpload className="h-5 w-5" />}
-              title="Context budget manager"
-              description="Intelligent chunk selection fits within LLM token limits. High-relevance chunks are prioritized automatically."
+              title="RAGAS + trace analytics"
+              description="Track faithfulness, relevancy, recall, and precision while reviewing trace-level agent decisions in analytics dashboards."
             />
           </div>
         </div>
@@ -149,32 +149,63 @@ export default function LandingPage() {
 
       {/* ── Architecture overview ── */}
       <section className="border-t border-zinc-800/50 bg-surface-raised/30">
-        <div className="mx-auto max-w-4xl px-6 py-20 sm:py-28">
+        <div className="mx-auto max-w-6xl px-6 py-20 sm:py-28">
           <div className="text-center">
             <p className="text-sm font-semibold uppercase tracking-wider text-brand-400">Architecture</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
               Production patterns, not toy code
             </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-sm text-zinc-400">
+              Agentic AI pipeline with streaming UX, hybrid retrieval, and measurable quality.
+            </p>
           </div>
 
-          <div className="mt-12 rounded-xl border border-zinc-800/60 bg-surface p-6 font-mono text-sm leading-relaxed text-zinc-400 sm:p-8">
-            <div className="space-y-3">
-              <p className="text-zinc-300">┌─ <span className="text-brand-400">React + TypeScript</span> ─── Frontend SPA (Port 5173)</p>
-              <p>│</p>
-              <p className="text-zinc-300">├─ <span className="text-emerald-400">Go + Gin</span> ─────────── API Gateway (Port 8080)</p>
-              <p>│&nbsp;&nbsp;&nbsp;├─ File validation &amp; text extraction</p>
-              <p>│&nbsp;&nbsp;&nbsp;├─ Chunking (700 tokens, 100 overlap)</p>
-              <p>│&nbsp;&nbsp;&nbsp;└─ PostgreSQL metadata storage</p>
-              <p>│</p>
-              <p className="text-zinc-300">├─ <span className="text-amber-400">Python + FastAPI</span> ── RAG Service (Port 8000)</p>
-              <p>│&nbsp;&nbsp;&nbsp;├─ Sentence-Transformers (384-dim embeddings)</p>
-              <p>│&nbsp;&nbsp;&nbsp;├─ Qdrant vector search (cosine similarity)</p>
-              <p>│&nbsp;&nbsp;&nbsp;└─ OpenAI GPT-4o generation</p>
-              <p>│</p>
-              <p className="text-zinc-300">└─ <span className="text-purple-400">Data Layer</span></p>
-              <p>&nbsp;&nbsp;&nbsp;&nbsp;├─ PostgreSQL 16 ─── metadata, chunks, users</p>
-              <p>&nbsp;&nbsp;&nbsp;&nbsp;└─ Qdrant 1.12 ────── vector embeddings (HNSW)</p>
-            </div>
+          <div className="mt-12 grid gap-5 md:grid-cols-2">
+            <StackCard
+              title="Web App"
+              accent="from-indigo-500/25 to-violet-500/10"
+              bulletColor="bg-indigo-400"
+              items={[
+                'React + TypeScript SPA with protected routes',
+                'SSE streaming query UI with agent-step timeline',
+                'Document detail tabs: Overview, Chunks, Conversations, Ask',
+              ]}
+            />
+            <StackCard
+              title="API Gateway"
+              accent="from-emerald-500/20 to-cyan-500/10"
+              bulletColor="bg-emerald-400"
+              items={[
+                'Node.js + Express service contracts',
+                'JWT + refresh flow with Redis token blacklist',
+                'Upload, query, analytics, settings, and account APIs',
+              ]}
+            />
+            <StackCard
+              title="Agent Service"
+              accent="from-amber-500/20 to-orange-500/10"
+              bulletColor="bg-amber-400"
+              items={[
+                'FastAPI + LangGraph planner/retriever/grader/generator',
+                'Conversation memory cache in Redis with DB fallback',
+                'Traceable nodes/tools for observability',
+              ]}
+            />
+            <StackCard
+              title="RAG + Data Layer"
+              accent="from-fuchsia-500/20 to-purple-500/10"
+              bulletColor="bg-fuchsia-400"
+              items={[
+                'Hybrid BM25 + semantic retrieval and reranking',
+                'Qdrant vectors for chunks + query history',
+                'RAGAS metrics + PostgreSQL analytics + Redis cache',
+              ]}
+            />
+          </div>
+
+          <div className="mt-6 rounded-xl border border-zinc-800/70 bg-zinc-900/70 p-4 text-xs text-zinc-400">
+            <span className="font-semibold text-zinc-200">Deployment-ready:</span>{' '}
+            Docker Compose, Kubernetes manifests, Nginx ingress, and CI/CD workflows are included.
           </div>
         </div>
       </section>
@@ -203,7 +234,7 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
           <Logo size="sm" />
           <p className="text-xs text-zinc-500">
-            Built with Go, Python, React &amp; RAG
+            Built with Node.js, Python, React, LangGraph, and RAGAS
           </p>
         </div>
       </footer>
@@ -256,6 +287,34 @@ function FeatureCard({
       </div>
       <h3 className="font-semibold text-zinc-100">{title}</h3>
       <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">{description}</p>
+    </div>
+  )
+}
+
+function StackCard({
+  title,
+  items,
+  accent,
+  bulletColor,
+}: {
+  title: string
+  items: string[]
+  accent: string
+  bulletColor: string
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-800/70 bg-zinc-900/60 p-5">
+      <div className={`mb-4 rounded-lg bg-gradient-to-r px-3 py-2 ${accent}`}>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-100">{title}</h3>
+      </div>
+      <ul className="space-y-2.5">
+        {items.map((item) => (
+          <li key={item} className="flex items-start gap-2 text-sm text-zinc-300">
+            <span className={`mt-1.5 h-1.5 w-1.5 rounded-full ${bulletColor}`} />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
