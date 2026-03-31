@@ -1,4 +1,4 @@
-import { Response, NextFunction } from 'express'
+import { Request, Response, NextFunction } from 'express'
 import { pool } from '../models/db'
 import { AuthRequest } from '../types'
 
@@ -9,7 +9,8 @@ const ROLE_HIERARCHY: Record<string, number> = {
 }
 
 export function requireWorkspaceRole(minRole: 'viewer' | 'editor' | 'admin') {
-  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const authReq = req as AuthRequest
     const workspaceId = req.params.workspaceId
     if (!workspaceId) {
       res.status(400).json({ error: 'workspaceId is required' })
@@ -18,7 +19,7 @@ export function requireWorkspaceRole(minRole: 'viewer' | 'editor' | 'admin') {
 
     const { rows } = await pool.query<{ role: string }>(
       `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
-      [workspaceId, req.user.id]
+      [workspaceId, authReq.user.id]
     )
 
     if (!rows[0]) {
@@ -34,8 +35,8 @@ export function requireWorkspaceRole(minRole: 'viewer' | 'editor' | 'admin') {
       return
     }
 
-    req.workspaceId = workspaceId
-    req.workspaceRole = rows[0].role
+    authReq.workspaceId = workspaceId
+    authReq.workspaceRole = rows[0].role
     next()
   }
 }
